@@ -1,0 +1,45 @@
+# =====================================================================
+#  v1.0 - initial schema (minimal skeleton)
+#  Only the id (primary key) of each table is declared.
+#  To be completed: add the following columns (exercise.md Step 2 & Step 5):
+#   - user   : email, username, passwordHash, role, registrationDate
+#   - listing: title, description, price, category, creationDate, active,
+#              user_id + (in v1.1/v1.2) negotiable, streetAddress, city,
+#              postalCode, country, latitude, longitude
+#  NB: every migration must stay ADDITIVE (never modify an already
+#      published changelog). Add v1.1-negotiable.yaml + v1.2-geo.yaml.
+# =====================================================================
+databaseChangeLog:
+
+  - changeSet:
+      id: v1.0-1
+      author: tp-skeleton
+      changes:
+        - createTable:
+            tableName: user
+            columns:
+              - column:
+                  name: id
+                  type: INTEGER
+                  autoIncrement: true
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+
+  - changeSet:
+      id: v1.0-2
+      author: tp-skeleton
+      changes:
+        - createTable:
+            tableName: listing
+            columns:
+              - column:
+                  name: id
+                  type: INTEGER
+                  autoIncrement: true
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              # NB: SQLite/Liquibase do not handle FK well.
+              # Referential integrity is carried by a JPA relation
+              # (e.g. @ManyToOne owner on the Listing entity).

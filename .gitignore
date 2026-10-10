@@ -1,0 +1,28 @@
+# --- Java / Javac ---
+*.class
+*.jar
+!/.mvn/wrapper/*.jar
+
+# --- Maven ---
+target/
+!.mvn/wrapper/maven-wrapper.jar
+
+# --- IDE ---
+.idea/
+*.iml
+.vscode/
+.classpath
+.project
+.settings/
+.factorypath
+bin/
+
+# --- SQLite ---
+*.db
+*.db-journal
+*.sqlite
+*.sqlite3
+
+# --- OS ---
+.DS_Store
+Thumbs.db

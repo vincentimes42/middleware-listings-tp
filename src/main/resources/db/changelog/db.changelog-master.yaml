@@ -1,0 +1,20 @@
+# =====================================================================
+#  Master changelog - orchestrates the migrations (YAML).
+#  The skeleton provides only v1.0 (id only).
+#
+#  To be completed (exercise.md Step 5 - Schema evolution):
+#    - v1.1-negotiable.yaml : add column negotiable BOOLEAN
+#    - v1.2-geo.yaml        : add columns streetAddress, city, postalCode,
+#                             country, latitude, longitude
+#  NB: every migration must stay ADDITIVE (never modify an already
+#      published changelog).
+# =====================================================================
+databaseChangeLog:
+
+  - include:
+      file: classpath:db/changelog/v1.0-init.yaml
+
+  # - include:
+  #     file: classpath:db/changelog/v1.1-negotiable.yaml   # TODO
+  # - include:
+  #     file: classpath:db/changelog/v1.2-geo.yaml          # TODO

@@ -474,7 +474,7 @@ The V1 listing exposes **only public fields**:
 - The `Listing` entity needs an `seller` relation (`@ManyToOne` to `User`) -
   the skeleton leaves it to you; referential integrity is carried by JPA
   (SQLite/Liquibase are not used for FKs - see README).
-- Tests: three clients (anonymous, seller, another SELLER) × each endpoint.
+- Tests: three clients (anonymous, seller, another SELLER) x each endpoint.
 
 ### Acceptance checklist
 

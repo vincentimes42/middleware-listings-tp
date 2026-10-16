@@ -17,11 +17,18 @@ target/
 .factorypath
 bin/
 
-# --- SQLite ---
+# --- Local runtime ---
+# PostgreSQL data lives in a named docker volume (not in the repo).
+logs/
+*.log
+# any legacy local database files
 *.db
-*.db-journal
 *.sqlite
 *.sqlite3
+
+# --- Ad-hoc scratch / shell-redirect output (e.g. `mvn ... 2> err.txt`) ---
+/err*.txt
+/out*.txt
 
 # --- OS ---
 .DS_Store

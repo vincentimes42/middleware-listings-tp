@@ -1,0 +1,130 @@
+# =====================================================================
+#  TP1 (Spring Boot) — single shared "middleware" network  —  THE BASE
+#
+#  This is the single source of truth for the whole lab. It creates the
+#  ONE shared network `middleware` and the two services every other TP
+#  builds on:
+#       - listings-api          (Spring Boot API)      host 8080
+#       - listings-postgres     (Postgres for the API) host 5435
+#
+#  The follow-up TPs (Keycloak, Monitoring) attach to this SAME network
+#  (see ../keycloak/docker-compose.yml and ../monitoring/docker-compose.yml)
+#  and reach the API over the network name `listings-api` (container_name),
+#  so no host.docker.internal trickery is needed.
+#
+#  To do a follow-up TP you must edit THIS file with that TP's small
+#  additions. The edits are documented in the TP's README (the "specified
+#  content") and sketched in the commented blocks at the bottom:
+#       * Keycloak   -> issuer/JWKS env (Keycloak itself moves to host 8081;
+#                       the API stays on 8080)   (see ../keycloak/README.md "Run")
+#       * Monitoring -> app OTLP env (logs already shared via LOG_FILE +
+#                       listings-logs volume)            (see ../monitoring/README.md "Run")
+#
+#  Run (TP1)     : docker compose up -d
+#  Health        : curl -fsS http://localhost:8080/actuator/health
+#  Stop (keep)   : docker compose down
+#  Reset (wipe)  : docker compose down -v
+# =====================================================================
+
+name: middleware
+
+networks:
+  middleware:
+    name: middleware     # explicit -> follow-up TPs reference this by name
+    driver: bridge
+
+volumes:
+  listings-pgdata:
+  listings-logs:
+    name: middleware-logs   # explicit global name so the Monitoring TP's
+                            # Promtail (a separate compose project) mounts the SAME volume
+
+services:
+
+  # ------------------------------------------------------------------
+  #  PostgreSQL 16 — persistence for the listings API (replaces SQLite)
+  #  Internal port is the standard 5432; published on host 5435 so it never
+  #  collides with a local Postgres the student may be running.
+  # ------------------------------------------------------------------
+  listings-postgres:
+    image: postgres:16
+    container_name: listings-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: listings
+      POSTGRES_USER: listings
+      POSTGRES_PASSWORD: listings
+    ports:
+      - "5435:5432"     # host:internal
+    volumes:
+      - listings-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U listings -d listings || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+    networks: [middleware]
+
+  # ------------------------------------------------------------------
+  #  listings API — Spring Boot 4 / JDK 27
+  #  The server ALWAYS listens on internal port 8080 (SERVER_PORT) and is
+  #  published on host 8080 for EVERY TP (TP1, Keycloak, Monitoring). The
+  #  follow-up TPs never change the API's port — Keycloak itself moves to
+  #  host 8081 instead of colliding with us.
+  #  DB URL/credentials are env-overridable; sensible defaults target the
+  #  published host instance (5435) so `mvn spring-boot:run` also works.
+  # ------------------------------------------------------------------
+  listings-api:
+    build: .
+    image: listings-api:tp1
+    container_name: listings-api
+    restart: unless-stopped
+    depends_on:
+      listings-postgres:
+        condition: service_healthy
+    environment:
+      SERVER_PORT: "8080"
+      # From INSIDE the container, Postgres is on the middleware network
+      # (internal port 5432), NOT localhost:5435.
+      SPRING_DATASOURCE_URL: "jdbc:postgresql://listings-postgres:5432/listings"
+      SPRING_DATASOURCE_USERNAME: "listings"
+      SPRING_DATASOURCE_PASSWORD: "listings"
+      # Monitoring TP (TP3): the app writes one shared log file here;
+      # harmless when the Monitoring TP is not active.
+      LOG_FILE: "/listings-logs/listings.log"
+    ports:
+      # Host 8080 for every TP (TP1, Keycloak, Monitoring — no collision:
+      # Keycloak moves to host 8081, see ../keycloak/docker-compose.yml).
+      - "8080:8080"
+    volumes:
+      - listings-logs:/listings-logs
+    networks: [middleware]
+    healthcheck:
+      # Temurin JRE image has no curl/wget, and /bin/sh is dash (no /dev/tcp),
+      # so force bash for a plain TCP probe against the app on port 8080.
+      test: ["CMD-SHELL", "bash -c 'exec 3<>/dev/tcp/localhost/8080 && exit 0 || exit 1'"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 40s
+
+# ------------------------------------------------------------------
+#  OPTIONAL FOLLOW-UP SERVICES (enable ONE at a time, never both)
+#
+#  These services live in ../keycloak/docker-compose.yml and
+#  ../monitoring/docker-compose.yml and attach to the `middleware`
+#  network created above. You do NOT add them here and you do NOT change
+#  the API's port (host 8080 for every TP). The only per-TP change to THIS
+#  service is the env variables, documented next and in each TP's README:
+#
+#  --- TP2 (Keycloak) — in `listings-api` above, add to `environment`:
+#        SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_ISSUER_URI: "http://localhost:8081/realms/listings"
+#        SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_JWK_SET_URI: "http://keycloak:8080/realms/listings/protocol/openid-connect/certs"
+#      (Keycloak is on host 8081, see ../keycloak/README.md "Run".)
+#
+#  --- TP3 (Monitoring) — in `listings-api` above, the LOG_FILE env and the
+#        listings-logs volume already exist; the app just needs to push
+#        OTLP to the network name `otel-collector` (see
+#        ../monitoring/README.md "Run"). No port change (host 8080).
+# ------------------------------------------------------------------

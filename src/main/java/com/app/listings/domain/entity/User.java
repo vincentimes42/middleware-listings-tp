@@ -1,33 +1,103 @@
 package com.app.listings.domain.entity;
 
+import com.app.listings.domain.Role;
+import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 
+import java.time.Instant;
+
 /**
- * User entity - minimal skeleton.
+ * User entity - provided with the Step 1 (User Accounts) identity fields.
  *
- * Add your business fields here (email, username, passwordHash, role,
- * registrationDate, etc.), plus their getters and setters.
- * Note: setters are FLUENT (each setter returns `this`).
+ * The mapping is complete for the Basic-auth skeleton: the student only
+ * needs to wire the controller (exercise.md Step 1.1 / 1.4) and the two
+ * lookup use-cases (exercise.md Step 1.4). The service (create / check
+ * uniqueness / hashing) is already implemented - see UserServiceImpl.
  *
- * Example of a fluent setter:
- *     public User withEmail(String email) { this.email = email; return this; }
+ * Setters are FLUENT (each setter returns `this`) so callers can chain:
+ *     new User().withEmail("a@b.c").withUsername("a").withRole(Role.SELLER)
  */
 @Entity
-@Table(name = "user")
+@Table(name = "app_user")
 public class User {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    protected User() {
+    @Column(nullable = false, unique = true, length = 254)
+    private String email;
+
+    @Column(nullable = false, length = 100)
+    private String username;
+
+    @Column(name = "password_hash", nullable = false, length = 255)
+    private String passwordHash;
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 32)
+    private Role role;
+
+    @Column(name = "registration_date", nullable = false)
+    private Instant registrationDate;
+
+    public User() {
+        // required by JPA
     }
 
     public Long getId() {
         return id;
     }
+
+    public String getEmail() {
+        return email;
+    }
+
+    public User withEmail(String email) {
+        this.email = email;
+        return this;
+    }
+
+    public String getUsername() {
+        return username;
+    }
+
+    public User withUsername(String username) {
+        this.username = username;
+        return this;
+    }
+
+    public String getPasswordHash() {
+        return passwordHash;
+    }
+
+    public User withPasswordHash(String passwordHash) {
+        this.passwordHash = passwordHash;
+        return this;
+    }
+
+    public Role getRole() {
+        return role;
+    }
+
+    public User withRole(Role role) {
+        this.role = role;
+        return this;
+    }
+
+    public Instant getRegistrationDate() {
+        return registrationDate;
+    }
+
+    public User withRegistrationDate(Instant registrationDate) {
+        this.registrationDate = registrationDate;
+        return this;
+    }
+
 }

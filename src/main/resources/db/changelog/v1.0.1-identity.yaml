@@ -1,0 +1,55 @@
+# =====================================================================
+#  v1.0.1 - identity columns on `app_user`
+#  Additive migration: v1.0 declared only `id`; this adds the identity
+#  fields exercised by Step 1 (User Accounts). Do NOT edit v1.0.
+#
+#  (Listing columns are added by the student in Step 5, v1.1 / v1.2 -
+#   see db.changelog-master.yaml.)
+# =====================================================================
+databaseChangeLog:
+
+  - changeSet:
+      id: v1.0.1-1
+      author: tp-skeleton
+      changes:
+        - addColumn:
+            tableName: app_user
+            columns:
+              - column:
+                  name: email
+                  type: VARCHAR(254)
+                  constraints:
+                    nullable: false
+                    # unique index is added by the student in Step 1 (or here, either is fine)
+        - addColumn:
+            tableName: app_user
+            columns:
+              - column:
+                  name: username
+                  type: VARCHAR(100)
+                  constraints:
+                    nullable: false
+        - addColumn:
+            tableName: app_user
+            columns:
+              - column:
+                  name: password_hash
+                  type: VARCHAR(255)
+                  constraints:
+                    nullable: false
+        - addColumn:
+            tableName: app_user
+            columns:
+              - column:
+                  name: role
+                  type: VARCHAR(32)
+                  constraints:
+                    nullable: false
+        - addColumn:
+            tableName: app_user
+            columns:
+              - column:
+                  name: registration_date
+                  type: TIMESTAMP
+                  constraints:
+                    nullable: false

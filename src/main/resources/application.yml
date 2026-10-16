@@ -7,10 +7,17 @@ spring:
   application:
     name: listings
 
-  # ---------------- Database (SQLite) ----------------
+  # ---------------- Database (PostgreSQL) ----------------
+  # Defaults target the docker-compose service `listings-postgres` (see
+  # docker-compose.yml). The follow-up TPs (Keycloak / Monitoring) reuse the
+  # same service, so no change is needed there. `mvn spring-boot:run` works
+  # out of the box against the locally published instance on host port 5435.
+  # Every value can be overridden with an environment variable, e.g.
+  #   SPRING_DATASOURCE_URL, SPRING_DATASOURCE_USERNAME, SPRING_DATASOURCE_PASSWORD
   datasource:
-    url: "jdbc:sqlite:listings.db"
-    driver-class-name: org.sqlite.JDBC
+    url: "jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5435}/${DB_NAME:listings}"
+    username: "${DB_USER:listings}"
+    password: "${DB_PASS:listings}"
 
   # ---------------- JPA / Hibernate ----------------
   jpa:
@@ -18,7 +25,6 @@ spring:
       ddl-auto: none  # the schema is managed by Liquibase (not Hibernate)
     properties:
       hibernate:
-        dialect: org.hibernate.community.dialect.SQLiteDialect
         format_sql: true
         use_sql_comments: true
     open-in-view: false

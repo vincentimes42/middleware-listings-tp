@@ -1,0 +1,17 @@
+# keep the build context small + do not ship local data into the image
+target/
+.git/
+.idea/
+.vscode/
+*.iml
+*.db
+*.db-journal
+*.sqlite
+*.sqlite3
+logs/
+*.log
+Dockerfile
+.dockerignore
+docs/
+solutions/
+**/.DS_Store

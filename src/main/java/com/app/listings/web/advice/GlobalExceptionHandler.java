@@ -1,5 +1,6 @@
 package com.app.listings.web.advice;
 
+import com.app.listings.domain.exception.EmailAlreadyExistsException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.MethodArgumentNotValidException;
@@ -11,11 +12,12 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
- * Global exception handler - basic example (422 validation + generic 500).
+ * Global exception handler. PROVIDED for: 422 (validation), 409 (duplicate
+ * email) and 500 (generic).
  *
- * To be extended with the rest of the "Error handling & status codes" table
- * from exercise.md (400 unknown version, 403 owner check, 404 inactive /
- * not found, 409 duplicate email, 415 / 406 content negotiation, ...).
+ * To be extended with the rest of the "Error handling & status codes"
+ * table in exercise.md (400 unknown version, 403 owner check,
+ * 404 inactive / not found, 415 / 406 content negotiation, ...).
  *
  * Keep the error-response format defined there (JSON: timestamp, status,
  * error, message, optional fields map).
@@ -34,6 +36,16 @@ public class GlobalExceptionHandler {
                 fields.put(fe.getField(), fe.getDefaultMessage()));
         body.put("fields", fields);
         return ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY).body(body);
+    }
+
+    @ExceptionHandler(EmailAlreadyExistsException.class)
+    public ResponseEntity<Map<String, Object>> handleEmailTaken(EmailAlreadyExistsException ex) {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("timestamp", Instant.now().toString());
+        body.put("status", HttpStatus.CONFLICT.value());
+        body.put("error", "Conflict");
+        body.put("message", ex.getMessage());
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(body);
     }
 
     @ExceptionHandler(Exception.class)

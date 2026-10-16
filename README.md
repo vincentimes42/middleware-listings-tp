@@ -23,103 +23,112 @@ Everything else in this README is operational (install, run, tree).
 
 ## Prerequisites
 
-You need an **OpenJDK 27** build (the skeleton is compiled against Java 27) and
-**Maven 3.9+**, or the IDE equivalents that bundle both. No Docker required.
+The project is **Spring Boot 4.1.1 / Java 27** and uses **PostgreSQL** as its
+database. There are two ways to run it, and they need different things on your
+machine:
 
-> "OpenJDK" is the open-source reference implementation of the Java platform —
-> every JDK you'll find in a distro repo or via SDKMAN! is an OpenJDK build,
-> just packaged by a different party (Temurin, Zulu, Corretto, Oracle OpenJDK,
-> Microsoft, ...). All behave identically for this exercise.
+| Mode | What it is | Needs installed on the host |
+|---|---|---|
+| **1. Docker Compose** (recommended) | build + run the API and its PostgreSQL in containers | **Docker Engine + Docker Compose plugin** — nothing else |
+| **2. Run on the host with Maven** | develop in your IDE / terminal against a local PostgreSQL | **OpenJDK 27 + Maven 3.9+ AND Docker** (for the PostgreSQL container; you could also install Postgres natively) |
 
-Pick the setup that fits your workflow:
+> Mode 1 is the **default path for this TP** and the one the follow-up TPs
+> (Keycloak, Monitoring) build on. It needs only Docker: the `Dockerfile` builds
+> the app with its own Java 27, and `docker-compose.yml` starts both the API and
+> its PostgreSQL. Use mode 2 when you want your IDE's debugger / test runner
+> attached to the running app.
 
-### Option A — Native Linux (command line / Maven CLI)
+### Install — mode 1 (Docker Compose) [recommended]
 
 ```bash
-# 1) Maven (Debian/Ubuntu)
+# Docker Engine + Compose plugin (Debian / Ubuntu)
 sudo apt update
-sudo apt install -y maven
+sudo apt install -y docker.io docker-compose-plugin
+sudo systemctl enable --now docker
+sudo usermod -aG docker $USER        # then log out + in, or use `sudo docker`
 
-# 2) OpenJDK 27 — first try your distro's package:
+# sanity
+docker compose version                # expect "Docker Compose version v2.x"
+```
+
+That's all you need for mode 1 — **no Java, no Maven** on the host.
+
+### Install — mode 2 (Maven) [optional]
+
+```bash
+# 1) OpenJDK 27 — first try your distro's package:
 sudo apt install -y openjdk-27-jdk           # Debian / Ubuntu
-# sudo dnf   install -y java-openjdk-devel   # Fedora / RHEL (version depends on release)
+# sudo dnf   install -y java-openjdk-devel   # Fedora / RHEL
 # sudo pacman -S jdk-openjdk                 # Arch
 
-# 3) If 27 is not yet in your distro repos, install it via SDKMAN!
-#    (all the 27.x entries listed below are OpenJDK builds):
-curl -s "https://get.sdkman.io" | bash
-source "$HOME/.sdkman/bin/sdkman-init.sh"
-sdk list java                                # look for the 27.x entries
-sdk install java 27.0.1-tem                  # example — Temurin OpenJDK 27
-                                             # (or -zulu / -amzn / -oracle / -lib,
-                                             #  any of them are OpenJDK)
+# 2) Maven 3.9+:
+sudo apt install -y maven
+# (or your distro / brew / choco equivalent)
 
-# 4) sanity
-java -version                                # expect 27.x
-mvn -version                                 # expect 3.9+
+# 3) sanity
+java -version      # expect 27.x
+mvn -version       # expect 3.9+
+
+# 4) PostgreSQL (for `mvn spring-boot:run`). Easiest: the compose file's Postgres.
+cd <this folder>   # springboot/
+docker compose up -d listings-postgres
+# -> now reachable at localhost:5435 (db/user/pass: listings)
 ```
 
-> **Tip**: pick **one** source for the JDK (distro **or** SDKMAN!) and stick
-> with it — do not mix them on the same machine. Set `JAVA_HOME` accordingly:
->
-> ```bash
-> # distro (deb):
-> JAVA_HOME=/usr/lib/jvm/java-27-openjdk-amd64
-> # SDKMAN!:
-> JAVA_HOME=$HOME/.sdkman/candidates/java/current
-> ```
+> If your distro doesn't ship OpenJDK 27 yet, install it via SDKMAN!:
+> `curl -s "https://get.sdkman.io" | bash` then `sdk install java 27.0.1-tem`.
+> Pick **one** source for the JDK (distro **or** SDKMAN!) and stick with it;
+> set `JAVA_HOME` accordingly.
 
-### Option B — IntelliJ IDEA (JDK + Maven bundled)
+### IDE setup (either mode)
 
-1. **OpenJDK 27**: `File → Project Structure → SDKs → + → Download JDK…`,
-   then pick **27** and any vendor you like (Temurin, Corretto, Oracle OpenJDK,
-   Zulu, ...) — they are all OpenJDK builds.
-   Alternatively, choose **Add JDK…** and point IntelliJ at the local
-   `openjdk-27-jdk` install (e.g. `/usr/lib/jvm/java-27-openjdk-amd64`).
-2. **Maven**: bundled — `Settings → Build, Execution, Deployment → Build
-   Tools → Maven` (the `Maven home path` already points at the IDEA copy; no
-   install needed).
-3. **Import**: `File → Open` and select the folder containing `pom.xml`.
-4. **Run**: the `spring-boot:run` goal is available from the Maven tool window
-   (right pane → `Plugins → spring-boot → run`), or use the `src/main/java`
-   green ▶.
-
-### Option C — VS Code (Red Hat Java + Maven extensions)
-
-Open the project folder and VS Code will suggest:
-
-- **Extension Pack for Java** (includes the Red Hat Java extension; it can
-  download a JDK for you), and
-- **Maven for Java** (Maven panel on the left).
-
-Point the Java extension at your **local OpenJDK 27** (install it with Option A
-first, or let the extension pick one for you). In `.vscode/settings.json`
-(or your user settings):
-
-```json
-{
-  "java.jdt.ls.java.home": "/usr/lib/jvm/java-27-openjdk-amd64",
-  "java.configuration.runtimes": [
-    { "name": "JavaSE-27", "path": "/usr/lib/jvm/java-27-openjdk-amd64", "default": true }
-  ]
-}
-```
-
-If Maven is not installed natively, either install it (Option A, Maven only) or
-let the extension prompt you to download it.
-
-> **Check** the IDE is using an OpenJDK 27 build — in IntelliJ: `Help → Find
-> Action → Switch JDK`; in VS Code: the status bar (bottom-right) shows the
-> active Java language level.
+- **IntelliJ** — `File → Project Structure → SDKs → + → Download JDK 27` (any
+  vendor: Temurin, Zulu, Corretto, Oracle); Maven is bundled; run the main
+  class `ListingsApplication` or `mvn spring-boot:run`.
+- **VS Code** — Extensions: "Extension Pack for Java" (includes Red Hat Java,
+  can download a JDK); "Maven for Java". Point the Java extension at a JDK 27
+  (e.g. `java.jdt.ls.java.home`).
+- **Either IDE** — `File → Open` on the folder containing `pom.xml`, then
+  `Build → Build Project` (IntelliJ) or Maven panel → `life-cycle: compile`
+  (VS Code) to load the project.
 
 ## Run
 
+You can run the app two ways. **Pick one per session; don't run both at once**
+(both would fight over the same PostgreSQL and you will get `5xx` from the
+loser).
+
+### Mode 1 — Docker Compose [recommended]
+
 ```bash
-mvn spring-boot:run
+cd <this folder>   # springboot/
+docker compose up -d --build        # build the image, start API + PostgreSQL
+docker compose ps                   # wait for "healthy" / "Up" on both
+curl -fsS http://localhost:8080/actuator/health
 ```
 
-The application starts on <http://localhost:8080>. It uses a local SQLite
-database (`listings.db`) whose schema is created by **Liquibase** (`v1.0`).
+- On the **host**, the API lives at <http://localhost:8080> and PostgreSQL is
+  exposed on <http://localhost:5435> (db/user/pass `listings`).
+- The `Dockerfile` does the Java build (JDK 27) and ships a slim JRE 27 image —
+  no host Java needed.
+- The schema is created by **Liquibase** at startup (`v1.0`, then the additive
+  `v1.1-v2-fields.yaml` you add in Step 5).
+- Stop: `docker compose down`. Wipe data: `docker compose down -v`.
+- Tail logs: `docker compose logs -f listings-api`.
+
+### Mode 2 — Maven on the host
+
+```bash
+cd <this folder>   # springboot/
+docker compose up -d listings-postgres      # start only the DB if not already up
+mvn spring-boot:run                         # run the app in your terminal
+curl -fsS http://localhost:8080/actuator/health
+```
+
+- Requires JDK 27 **+** Maven 3.9+ on the host (see Install — mode 2).
+- The app reads the connection values from `application.yml`
+  (`jdbc:postgresql://localhost:5435/listings`, user/pass `listings`) or
+  overrides from `DB_HOST` / `DB_PORT` / `DB_NAME` / `DB_USER` / `DB_PASS`.
 
 ### URLs available at startup
 
@@ -143,56 +152,75 @@ database (`listings.db`) whose schema is created by **Liquibase** (`v1.0`).
 ## Build & test
 
 ```bash
+# make sure a Postgres is reachable on localhost:5435 (e.g. the base compose),
+# then:
 mvn clean verify
 ```
+
+The provided `ListingsSmokeTest` boots the full context, so it needs that
+Postgres (or your Testcontainers setup, see exercise.md). Unit tests don't.
 
 ## Tree
 
 ```
-src/main/java/com/app/listings
-├── ListingsApplication.java        # entry point
-├── application/
-│   └── service/                    # application ports (interface) + implementation
-│       ├── UserService.java
-│       ├── UserServiceImpl.java
-│       ├── ListingService.java
-│       └── ListingServiceImpl.java
-├── config/
-│   ├── ApiVersioningConfig         # API versioning
-│   └── SecurityConfig              # HTTP Basic (no session)
-├── domain/
-│   ├── Category.java               # enum (9 values)
-│   ├── Role.java                   # enum (SELLER)
-│   ├── entity/
-│   │   ├── User.java               # minimal skeleton (id)
-│   │   └── Listing.java            # minimal skeleton (id)
-│   └── repository/
-│       ├── UserRepository.java
-│       └── ListingRepository.java
-└── web/
-    ├── controller/
-    │   ├── AuthController.java     # /auth/register, /auth/me (Basic auth)
-    │   └── ListingController.java
-    ├── dto/
-    │   ├── ListingRequestDto.java  # to be completed
-    │   └── ListingResponseDto.java # to be completed
-    └── advice/
-        └── GlobalExceptionHandler.java
-
-src/main/resources
-├── application.yml                 # main configuration (dev profile)
-├── application-dev.yml
-└── db/changelog/
-    ├── db.changelog-master.yaml    # orchestrates the migrations
-    └── v1.0-init.yaml              # initial schema (id) - to be completed (v1.1, v1.2)
-
-src/test/java/com/app/listings
-└── ListingsSmokeTest.java          # context test (starting point)
+<project>/                                  # this folder
+├── README.md                           # this file — how to install / run / build
+├── exercise.md                         # the statement (Steps 1–11)
+├── pom.xml                             # Maven build (Boot 4.1.1, Java 27, PostgreSQL)
+├── Dockerfile                          # 3-stage build: JDK 27 + Maven -> JRE 27
+├── docker-compose.yml                  # THE BASE for the whole lab: API (8080) +
+│                                       #   PostgreSQL (5435) on the shared `middleware`
+│                                       #   network (follow-up TPs attach to that same
+│                                       #   network; see ../keycloak, ../monitoring)
+├── .dockerignore                       # build context exclusions (no target/, .git, *.db)
+├── .gitignore
+│
+├── src/main/java/com/app/listings
+│   ├── ListingsApplication.java        # entry point
+│   ├── application/
+│   │   └── service/                    # application ports (interface) + implementation
+│   │       ├── UserService.java
+│   │       ├── UserServiceImpl.java
+│   │       ├── ListingService.java
+│   │       └── ListingServiceImpl.java
+│   ├── config/
+│   │   ├── ApiVersioningConfig         # API versioning
+│   │   └── SecurityConfig              # HTTP Basic (no session)
+│   ├── domain/
+│   │   ├── Category.java               # enum (9 values)
+│   │   ├── Role.java                   # enum (SELLER)
+│   │   ├── entity/
+│   │   │   ├── User.java               # maps to table `app_user` (id only, to complete)
+│   │   │   └── Listing.java            # maps to table `listing` (id only, to complete)
+│   │   └── repository/
+│   │       ├── UserRepository.java
+│   │       └── ListingRepository.java
+│   └── web/
+│       ├── controller/
+│       │   ├── AuthController.java     # /auth/register, /auth/me (Basic auth)
+│       │   └── ListingController.java
+│       ├── dto/
+│       │   ├── ListingRequestDto.java  # to be completed
+│       │   └── ListingResponseDto.java # to be completed
+│       └── advice/
+│           └── GlobalExceptionHandler.java
+│
+├── src/main/resources
+│   ├── application.yml                 # main configuration (PostgreSQL, actuator,
+│   │                                   #   jackson; every DB_* is env-overridable)
+│   ├── application-dev.yml
+│   └── db/changelog/
+│       ├── db.changelog-master.yaml    # orchestrates the migrations
+│       └── v1.0-init.yaml              # initial schema (id only) - to be completed
+│
+└── src/test/java/com/app/listings
+    └── ListingsSmokeTest.java          # context test (starting point; needs a
+                                        #   Postgres reachable on localhost:5435)
 ```
 
 ## Schema migrations (Liquibase)
 
-The SQLite file `listings.db` is versioned by **Liquibase**, not by Hibernate
+The **PostgreSQL** schema is versioned by **Liquibase**, not by Hibernate
 (`spring.jpa.hibernate.ddl-auto` is `none`). This means **the schema is code**:
 every change you make to the database lives in a YAML **changelog** that is
 applied at startup, in order, and recorded.
@@ -200,12 +228,14 @@ applied at startup, in order, and recorded.
 ### Why
 
 - The schema **evolves** through the exercise (Steps 1, 2, 5 add columns).
-  Liquibase lets you change it **without deleting `listings.db`** — it only
-  applies changes it has not run yet.
+  Liquibase lets you change it **without dropping/rebuilding Postgres** — it
+  only applies the changes it has not run yet.
 - Every change is auditable in `DATABASECHANGELOG` (a table Liquibase creates
-  inside the SQLite file) so you can see exactly what ran.
-- It works the same for any database (PostgreSQL, MySQL, …) — the only thing
-  you should not do here is change the engine.
+  inside PostgreSQL) so you can see exactly what ran.
+- It works the same for any database engine the JDBC URL points at.
+
+> The tables are named `app_user` and `listing`. `app_user` (rather than
+> `user`) is deliberate: `user` is a reserved keyword in PostgreSQL.
 
 ### How it's wired in this project
 
@@ -221,11 +251,9 @@ src/main/resources/db/changelog/
 databaseChangeLog:
   - include:
       file: classpath:db/changelog/v1.0-init.yaml
-  # Step 5: add these two lines here (in order):
+  # Step 5: add this line here:
   # - include:
-  #     file: classpath:db/changelog/v1.1-negotiable.yaml
-  # - include:
-  #     file: classpath:db/changelog/v1.2-geo.yaml
+  #     file: classpath:db/changelog/v1.1-v2-fields.yaml
 ```
 
 Each migration file is made of **changeSets** tagged with a unique
@@ -258,6 +286,13 @@ whether the schema is "already built" or "grows on the fly".
 > **Rule of the exercise**: never edit an already-published changeSet — add
 > a new one instead.
 
+> **Tip to inspect the database** (Postgres is on host port 5435):
+>
+> ```bash
+> docker compose exec listings-postgres psql -U listings -d listings -c "\dt"
+> docker compose exec listings-postgres psql -U listings -d listings -c "\d app_user"
+> ```
+
 ---
 
 ## To implement (reminder - see exercise.md)
@@ -266,27 +301,22 @@ whether the schema is "already built" or "grows on the fly".
 1. **User accounts** (register, HTTP Basic auth, `/auth/me`)
 2. **Business endpoints** (POST / GET / PUT / DELETE `/listings`, ownership rules)
 3. **Security rules** (public read, SELLER write, owner-only, actuator public)
-4. **Schema evolution**: changelogs `v1.1` (negotiable) + `v1.2` (address/GPS)
-5. **Versioning** V1 + V2 (native Spring, header + param, fallback; private-field
-   visibility in V2; two OpenAPI specs)
-6. **GPS enrichment**: Nominatim consumption (`RestClient`) + 3 s fallback
-7. **Metrics & logging** (`listings.created`, `geo.enrich_failed`)
+4. **Schema evolution**: changelog `v1.1` (all new V2 columns: negotiable + address + GPS)
+5. **Versioning** V1 + V2 (native Spring query-param `?version=`, default V1;
+   private-field visibility in V2; two OpenAPI specs)
+6. **Metrics** (`listings.created`)
 
 **Bonus** (start only when the core is green)
+7. **GPS enrichment**: Nominatim consumption (`RestClient`) + 3 s fallback
 8. **Content negotiation** JSON + XML (add `jackson-dataformat-xml`, see exercise.md Appendix B)
 9. **Distance search** (V2)
-10. **Hexagonal architecture** (+ ArchUnit test)
 
-> **Technical note**: SQLite + Liquibase have a few limitations (no FK
-> support managed, `AUTOINCREMENT` limited to `INTEGER PRIMARY KEY`,
-> no `remark`). The referential integrity between `listing` and `user`
-> should be added via a JPA relation (`@ManyToOne`) and, if appropriate,
-> a database-level constraint. This choice is deliberate to keep the
-> skeleton portable and focused on the interface contract.
+> **Technical note**: the database is **PostgreSQL**. The referential
+> integrity between `listing` and `app_user` is carried by a JPA relation
+> (`@ManyToOne` on the entity); you may also add a database-level foreign key
+> in a Liquibase changeSet if you want it enforced at the DB level. Keep all
+> migrations ADDITIVE.
 
 ## Notes on Spring Boot 4
 
 - Boot **4.1.x** is used; **Liquibase** is the schema manager.
-- Spring Boot 4 introduced **new web testing mechanisms**
-  (see `org.springframework.boot.test.web` / `test.http`); adapt your
-  endpoint testing approach accordingly (WebTestClient, localTestWebServer, etc.).

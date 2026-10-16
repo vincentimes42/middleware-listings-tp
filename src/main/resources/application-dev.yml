@@ -3,9 +3,9 @@
 #  Typical overrides (local datasource, DEBUG logging, etc.)
 # =====================================================================
 spring:
-  # The skeleton already uses the local SQLite file (listings.db).
-  # In dev you can adapt it, e.g. an in-memory database:
-  #   url: "jdbc:sqlite::memory:"
+  # The base datasource is PostgreSQL (see application.yml / docker-compose.yml).
+  # In dev you can point at a scratch instance, or a throwaway DB, e.g.:
+  #   url: "jdbc:postgresql://localhost:5435/listings_dev"
   jpa:
     show-sql: true
 

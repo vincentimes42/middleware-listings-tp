@@ -7,8 +7,11 @@ about 8 hours. The skeleton project you receive already compiles, starts, and pa
 a context test. Your job is to implement the API **feature by feature**, in the order
 below.
 
-For each step you are invited to **write tests first**, see them fail, then implement
-until they pass. The tests you write *are* part of your deliverable.
+For each step you are encouraged (but **not required**) to **write tests first**,
+see them fail, then implement until they pass. A starter test is already provided;
+additional tests are a good way to convince yourselves a step is done, but writing
+your own test suite is **optional** — the graded acceptance checklist below is what
+matters.
 
 The specification below describes **behaviors, contracts, and response codes**.
 It does NOT prescribe the internal implementation (framework classes, design
@@ -16,10 +19,12 @@ patterns, or library choices). You are free to structure the code however you
 see fit, provided the **observable behavior** matches the specification.
 
 > **Testing note**: `spring-boot-starter-test` and `spring-security-test` are
-> already on the classpath. Use the web test client of your Boot version to test
-> endpoints end-to-end, and simulate HTTP Basic users with `httpBasic(...)`
+> already on the classpath, in case you want to build your own tests. The
+> *Testing strategy* section below is an optional reference for how to write
+> them. If you do write tests: use the web test client of your Boot version to
+> test endpoints end-to-end, and simulate HTTP Basic users with `httpBasic(...)`
 > from `spring-security-test`. External collaborators (e.g. the geocoding
-> client) must be **mocked** in tests - never call the real Nominatim service.
+> client) must be **mocked** in tests — never call the real Nominatim service.
 
 ---
 
@@ -28,44 +33,27 @@ see fit, provided the **observable behavior** matches the specification.
 New to Maven or Spring Boot? This 2-minute mental model will make the steps
 below click. (Installation and run details are in `README.md`.)
 
-### Maven — a build tool with a standard layout
+### Maven — what you actually do
 
-**Maven is a tool that knows how to build a Java project.** You feed it a
-`pom.xml` (Project Object Model) that declares what the project depends on, how
-to compile / test / package it, and which plugins to run. Because the layout,
-goals, and dependencies are all **conventional**, every Maven project looks the
-same (`pom.xml`, `src/main/java`, `src/test/java`) and a small set of commands
-do the same everywhere:
+**Maven builds a Java project from a `pom.xml`** (dependencies, plugins).
+A small set of commands does the same everywhere:
 
 | Maven command | What it does |
 |---|---|
 | `mvn spring-boot:run` | start the application (port 8080) |
 | `mvn clean verify` | clean, compile, test, and package |
 
-Key idea: to use a library, you add a `<dependency>` in `pom.xml` — **not** a
-`jar`. You never touch classpath files by hand. (Maven docs: <https://maven.apache.org/guides/>.)
+Key idea: to use a library you add a `<dependency>` in `pom.xml` — you never
+touch `jar` files by hand.
 
-### Spring Boot — an opinionated framework for HTTP services
+### Spring Boot — what you actually do
 
-**Spring Boot turns Spring into "just enough" to build a production-grade HTTP
-service with very little boilerplate.** You write Java classes annotated with
-`@RestController`, `@Service`, `@Entity`, `@Repository`, `@Configuration`, and
-Spring Boot takes care of the rest:
-
-- **Dependency injection**: classes "ask" for their collaborators in the
-  constructor; Spring instantiates and wires them. No `new` for your beans.
-- **Auto-configuration**: a `starter` on the classpath (web, data-jpa, security,
-  liquibase, actuator…) + a few `application.yml` keys produce a working
-  DataSource, transaction manager, embedded HTTP server, security chain, and
-  schema migrations.
-- **The result here**: one entry point (`ListingsApplication.java`), a handful
-  of annotated classes, and one config file. Everything else is wiring done by
-  Spring Boot behind the scenes.
-
-> **Tip:** when a behaviour feels "magical", search the annotation or the `yml`
-> key in the Spring Boot reference (4.1.x, matching this project) — it links to
-> the auto-configuration class that drives it:
-> <https://docs.spring.io/spring-boot/4.1.1/reference/html/index.html>
+**You write annotated classes; Spring Boot wires the rest.** `@RestController`,
+`@Service`, `@Repository`, `@Entity`, `@Configuration` + a few `application.yml`
+keys give you the HTTP server, DataSource, security chain and Liquibase — you
+don't write that plumbing yourself. If a behaviour feels "magical", look up the
+annotation or `yml` key in the Bootstrap/Boot 4.1 reference:
+<https://docs.spring.io/spring-boot/4.1.1/reference/html/index.html>
 
 ---
 
@@ -126,9 +114,9 @@ but the owner and reads as **404** for non-owners; the owner alone still sees it
 
 | Track | Steps |
 |---|---|
-| **Core** (required - must fit in the 8h) | 1 · 2 · 3 · 5 · 6 · 7 · 8 |
-| **Bonus** (start only when the core checklists are green) | 4 (JSON + XML) · 9 (distance search) · 10 (hexagonal architecture) |
-| **Delivery** | 11 (final integration) |
+| **Core** (required - must fit in the 8h) | 1 · 2 · 3 · 5 · 6 · 8 |
+| **Bonus** (start only when the core checklists are green) | 4 (JSON + XML) · 7 (GPS enrichment) · 9 (distance search) |
+| **Delivery** | 10 (final integration) |
 
 Work the core steps **in order**; each step's acceptance checklist is your
 "definition of done" for that step.
@@ -154,7 +142,7 @@ make the actual HTTP response carry status 409 with a JSON body and a useful
 
 | Status | Trigger | Suggested mechanism |
 |---|---|---|
-| 400 | Unknown API version (e.g. `V99`); header/param version conflict (Step 6); missing or invalid distance parameters (Step 9) | custom `InvalidApiVersionException` |
+| 400 | Unknown API version (e.g. `V99` — Step 6); missing or invalid distance parameters (Step 9) | custom `InvalidApiVersionException` |
 | 401 | Unauthenticated write (Basic credentials missing or invalid) | Spring Security |
 | 403 | Non-seller PUT / DELETE (Step 3.3) | `AccessDeniedException` |
 | 404 | Unknown listing; `active=false` listing seen by a non-seller (Step 2) | custom `ResourceNotFoundException` (domain) |
@@ -175,13 +163,12 @@ Hints:
 
 ---
 
-## Testing strategy (how to test what)
+## Testing strategy (how to test what, if you choose to)
 
-`spring-boot-starter-test` and `spring-security-test` are already on the
-classpath (JUnit 5, AssertJ, Mockito come with it). Here is **which test to
-write where**, and a small recipe for each. Pick the level that matches the
-thing under test — the lower and more focused the test, the faster and cheaper
-it is, so most of your logic should live in unit tests.
+This section is **optional reading** — writing tests is not a deliverable
+(see the Overview). The three test levels below are what to think about if you
+do write some; pick the lowest level that covers the behaviour you want to
+pin down.
 
 ### The three levels
 
@@ -189,176 +176,22 @@ it is, so most of your logic should live in unit tests.
 |---|---|---|---|---|
 | **Unit** | one service / use-case with its collaborators faked | no | yes | `@ExtendWith(MockitoExtension.class)` |
 | **Slice** (optional) | the web layer only (controllers + validation + `@ControllerAdvice`), with collaborators faked | a thin Spring slice | yes | `@WebMvcTest` |
-| **Integration** | the real stack: context, SQLite, Liquibase, JPA, Security, end-to-end behaviour | yes | no | `@SpringBootTest(webEnvironment = RANDOM_PORT)` + `WebTestClient` |
+| **Integration** | the real stack: context, PostgreSQL, Liquibase, JPA, Security, end-to-end behaviour | yes | no | `@SpringBootTest(webEnvironment = RANDOM_PORT)` + `WebTestClient` |
 
 You do **not** have to cover everything at every level. A good split is:
 - **most** business rules (Steps 1-3, ownership, `active=false`, versioning
   visibility) as **unit tests** on your services, with a mocked repository;
 - **end-to-end contracts** (status codes, JSON shape, Security 401/403) as a
-  handful of **integration tests** (Step 11 asks for ≥ 20 tests *in total*).
+  handful of **integration tests** (if you write them — see Step 10.3: writing
+  your own suite is optional).
 
-### 1) Unit test: test a service with mocks
-
-Test the behaviour of a method in isolation. Collaborators (repository, the
-geocoding port, …) are **mocks** created with Mockito — no Spring, no database.
-
-```java
-@ExtendWith(MockitoExtension.class)
-class ListingServiceImplTest {
-
-    @Mock ListingRepository repository;      // fake collaborator
-    @Mock GeoEnrichmentPort geoPort;          // fake external service
-    @InjectMocks ListingServiceImpl service;  // real SUT, collaborators injected
-
-    @Test
-    void nonOwnerUpdateIsRejected() {
-        Long other = 2L;
-        when(repository.findById(1L)).thenReturn(Optional.of(aListingOwnedBy(1L)));
-        assertThatThrownBy(() -> service.update(1L, other, new ListingRequestDto()))
-                .isInstanceOf(AccessDeniedException.class);
-    }
-
-    @Test
-    void failedGeocodingStillSucceeds() {
-        when(geoPort.resolve("1 rue x")).thenThrow(new GeoException("boom"));
-        // act: service.update(...) -> still returns/saves, lat/lng null, WARN logged
-        // assert coordinates are null and the listing was saved (verify(save))
-    }
-}
-```
-
-Rules of thumb:
-- Name the test for the **behaviour**, not the method (`nonOwnerUpdateIsRejected`).
-- `when(...)` sets the **arrange**, call the method (**act**), AssertJ checks it
-  (**assert**). `verify(repository).save(...)` checks an expected interaction.
-- If the object under test has dependencies, prefer a **constructor** so they
-  are injectable (this is also what the DI framework in the app does).
-
-### 2) Integration test: the real stack, the HTTP contract
-
-Boot the entire application on a random local port and exercise the endpoints
-the way an API consumer would. The skeleton's note in
-`README.md#notes-on-spring-boot-4` points to the Boot 4 web test mechanism;
-the canonical recipe is `@SpringBootTest(webEnvironment = RANDOM_PORT)` +
-`@LocalServerPort` + `WebTestClient.bindToServer()`:
-
-```java
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
-class ListingsApiIntegrationTest {
-
-    @LocalServerPort int port;
-    @Autowired ListingRepository repository;
-
-    WebTestClient client;
-
-    @BeforeEach
-    void setUp() {
-        repository.deleteAll();          // start from a known, empty database
-        client = WebTestClient.bindToServer()
-                               .baseUri("http://localhost:" + port)
-                               .build();
-    }
-
-    @Test
-    void unauthenticatedSellerGets401OnCreate() {
-        client.post().uri("/listings")
-                .contentType(MediaType.APPLICATION_JSON)
-                .bodyValue("{\"title\":\"bike\",\"price\":99,\"category\":\"SPORTS\"}")
-                .exchange()
-                .expectStatus().isUnauthorized();
-    }
-
-    @Test
-    void sellerCanCreateAListing() {
-        register("a@t.org");
-
-        client.post().uri("/listings")
-                .header(HttpHeaders.AUTHORIZATION, basic("a@t.org", "secret1"))
-                .contentType(MediaType.APPLICATION_JSON)
-                .bodyValue("{\"title\":\"bike\",\"price\":99,\"category\":\"SPORTS\"}")
-                .exchange()
-                .expectStatus().isCreated()
-                .expectHeader().valueEquals(HttpHeaders.CONTENT_TYPE, "application/json");
-        // ... then register a second seller and assert PUT/DELETE -> 403
-    }
-
-    // ---------- test helpers ------------------------------------------------
-    void register(String email) {
-        client.post().uri("/auth/register")
-                .contentType(MediaType.APPLICATION_JSON)
-                .bodyValue("{\"email\":\"" + email + "\",\"username\":\"u\",\"password\":\"secret1\"}")
-                .exchange().expectStatus().isCreated();
-    }
-    static String basic(String user, String pass) {
-        return "Basic " + Base64.getEncoder()
-                                .encodeToString((user + ":" + pass).getBytes());
-    }
-}
-```
-
-> **Alternative client — `MockMvc`:** if you prefer the Spring MVC
-> `MockMvc` flavour (no real server), you can attach Basic credentials
-> with `spring-security-test`'s
-> `SecurityMockMvcRequestPostProcessors.httpBasic("user", "pass")`:
->
-> ```java
-> .perform(post("/listings").with(httpBasic("a@t.org", "secret1"))...)
-> ```
->
-> Pick one client and stick with it; the same assertions apply.
-
-A few practical points:
-- **Isolate test data**: an integration test that boots against the same
-  `listings.db` will see rows created by other tests / previous runs. Either
-  wipe the tables in a `@BeforeEach`, or run tests on an in-memory SQLite
-  (`jdbc:sqlite::memory:`) via a test profile — that is what
-  `application-dev.yml` already suggests.
-- **Assert the contract, not the code**: status, JSON field presence /
-  absence, and response headers (e.g. Step 6 `Deprecation`, `Sunset`,
-  `X-API-Version-*`) are what a real client observes.
-- **Speed**: an integration test boots the whole world (context, Liquibase,
-  Security) — keep **few** of them and put the bulk of your logic into
-  **unit tests** above.
-
-### 3) Mocking an external service (Nominatim) — never call the real one
-
-The geocoding client (Step 7) talks to the network. Two safe ways to fake it
-in tests:
-
-- **Unit level**: depend on a *port* (an interface) and inject a Mockito mock,
-  exactly like the `@Mock GeoEnrichmentPort geoPort` in the unit-test example
-  above. Fastest, and the cleanest spot — which is why Step 7 asks for the
-  client to be behind an interface.
-- **Integration level**: replace the *real* geocoding bean with a test double
-  so the whole app starts but never opens a network connection. With Boot 3.4/4
-  use `@MockitoBean` (import
-  `org.springframework.test.context.bean.override.mockito.MockitoBean`):
-
-  ```java
-  @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
-  class GeoEnrichmentIntegrationTest {
-      @MockitoBean GeoEnrichmentPort geo;        // replaces the real bean
-
-      @Test
-      void failedGeocodingStillReturns201() {
-          when(geo.resolve(ArgumentMatchers.anyString()))
-                   .thenThrow(new RuntimeException("timeout"));
-          // act: POST /listings with a streetAddress -> expect 201 and lat/lng null
-      }
-  }
-  ```
-  (`@MockBean` is the older name; `@MockitoBean` is the current one.)
-
-  The important part is the **intent**: the test controls success / time-out /
-  empty result, the production code only ever sees the interface.
-
-### What NOT to do
-
-- Call `https://nominatim.openstreetmap.org` from a test (rate-limited, flaky,
-  and it violates Step 7 — external collaborators must be mocked).
-- Test private methods or internal bean wiring — test **observable behaviour**.
-- Write one giant integration test that checks everything — keep the small,
-  fast unit tests for the rules, and a few integration tests for the contract.
+> **If you write tests**: name each test for the **behaviour** it checks
+> (`nonOwnerUpdateIsRejected`, not `updateTest`); assert the **observable
+> contract** (status, JSON fields, response headers), not internal wiring.
+> The geocoding port (Step 7) must always be **mocked** — never call the real
+> Nominatim service from a test (rate-limited, flaky). `spring-boot-starter-test`
+> and `spring-security-test` are already on the classpath (JUnit 5, AssertJ,
+> Mockito).
 
 ---
 
@@ -386,22 +219,34 @@ in tests:
 | POST | `/auth/register` | Public | 201 |
 | GET | `/auth/me` | HTTP Basic | 200 |
 
-### Hints
+### What is already provided (do not re-implement)
 
-- `SecurityConfig` already enables `httpBasic()`; add a `UserDetailsService` that
-  loads users from `UserRepository` (email as the login, BCrypt hash, authority
-  `SELLER`).
-- Hash the password at registration time with the existing `PasswordEncoder`
-  bean - never persist plain text.
-- 409: in `UserServiceImpl.create`, check uniqueness (e.g.
-  `UserRepository.existsByEmail(...)`, a derived query) and throw
-  `EmailAlreadyExistsException`.
-- 422: annotate the request DTO with jakarta.validation (`@Email`, `@NotBlank`,
-  `@Size(min = 6)` on the password) and mark it `@Valid` in the controller;
-  the skeleton's 422 handler already builds the `fields` map.
-- `/auth/me`: resolve the current user from `SecurityContextHolder` and map it to
-  a small response shape (id, email, username, role).
-- Test with `spring-security-test`: `httpBasic("alice@test.org", "secret123")`.
+- `User` entity, `UserRepository` (with `existsByEmail` / `findByEmail`).
+- `UserService` / `UserServiceImpl` - `register(UserRequestDto)` already does the
+  email-uniqueness check (409), BCrypt hashing, and `role = SELLER`.
+- `UserRequestDto` (with jakarta.validation: `@Email`, `@NotBlank`, `@Size(min=6)`)
+  and `UserResponseDto.from(User)` (which never exposes the password hash).
+- `GlobalExceptionHandler` - 409 (`EmailAlreadyExistsException`) and 422
+  (validation, with a `fields` map) are already mapped.
+- `SecurityConfig` - `httpBasic()`, a `PasswordEncoder` (BCrypt), a
+  `UserDetailsService` that loads by email, and a `SecurityFilterChain` that
+  lets `/auth/register` through while the rest requires Basic auth.
+
+### What you still do in this step
+
+- Wire `AuthController.register` to call `userService.register(dto)` and return
+  `UserResponseDto.from(user)` as **201**. Annotate the request
+  parameter `@Valid` so it is validated, and build a `URI` location so
+  Spring returns the `Location` header (use `ServletUriComponentsBuilder`).
+- Wire `AuthController.me` to resolve the current user from
+  `SecurityContextHolder` and return a `UserResponseDto` shaped response (id,
+  email, username, role - no password). If anonymous, Spring Security will
+  already return **401** before your code runs.
+
+### Optional
+
+- Test both endpoints with `spring-security-test`: `httpBasic("alice@test.org",
+  "secret123")`.
 
 ### Acceptance checklist
 
@@ -473,8 +318,7 @@ The V1 listing exposes **only public fields**:
 - Not found / inactive-for-others: throw `ResourceNotFoundException` (→ 404).
 - The `Listing` entity needs an `seller` relation (`@ManyToOne` to `User`) -
   the skeleton leaves it to you; referential integrity is carried by JPA
-  (SQLite/Liquibase are not used for FKs - see README).
-- Tests: three clients (anonymous, seller, another SELLER) x each endpoint.
+  (you may optionally add a DB-level FK in a Liquibase changeSet - see README).
 
 ### Acceptance checklist
 
@@ -523,7 +367,6 @@ The V1 listing exposes **only public fields**:
 - The **403** for non-sellers comes from your **service** layer (Step 2), which is
   why an anonymous writer gets 401 (Security) while an authenticated non-seller
   gets 403 (service).
-- Test with `httpBasic(...)` for the SELLER rows; no header for the anonymous row.
 
 ### Acceptance checklist
 
@@ -597,8 +440,7 @@ structural - the V1 API behavior does not change yet.
 
 | Migration | Added columns |
 |---|---|
-| v1.1 | `negotiable` (boolean) |
-| v1.2 | `street_address`, `city`, `postal_code`, `country`, `latitude` (double), `longitude` (double) |
+| v1.1 | `negotiable` (boolean) + `street_address`, `city`, `postal_code`, `country`, `latitude` (double), `longitude` (double) |
 
 ### Requirements
 
@@ -607,27 +449,24 @@ structural - the V1 API behavior does not change yet.
 | 5.1 | Migrations are **additive** (ADD COLUMN). No existing column is modified or dropped. |
 | 5.2 | All existing tests from Steps 1-3 remain **green** after migration. |
 | 5.3 | The new columns are **nullable** (existing rows have no value). |
-| 5.4 | `mvn clean verify` passes with all migrations applied cumulatively. |
+| 5.4 | `mvn clean verify` passes with migration applied. |
 
 ### Hints
 
-- Two new changelog files next to `v1.0-init.yaml`:
-  `v1.1-negotiable.yaml` (`negotiable` BOOLEAN) and `v1.2-geo.yaml` (the 6 geo
-  columns); each changeSet uses `addColumn` only.
-- Uncomment the two `include`s in `db.changelog-master.yaml`.
+- One new changelog file next to `v1.0-init.yaml`: `v1.1-v2-fields.yaml` with all 7 columns (`negotiable` + the 6 geo columns); use `addColumn` only.
+- Add that `include` to `db.changelog-master.yaml`.
 - Map the new attributes on the `Listing` entity - `ddl-auto` is `none`, so only
   Liquibase creates the columns; Hibernate only maps them.
-- Verify: the `DATABASECHANGELOG` table (visible in `listings.db`) must list
-  v1.0, v1.1 and v1.2 changeSets.
+- Verify: the `DATABASECHANGELOG` table must list v1.0 and v1.1 changeSets.
 - Never edit an already published changelog; a need for a new column → a new
   changeSet.
 
 ### Acceptance checklist
 
-- [ ] App starts with v1.0 + v1.1 + v1.2 applied (3+ rows in `DATABASECHANGELOG`)
+- [ ] App starts with v1.0 + v1.1 applied (2 rows in `DATABASECHANGELOG`)
 - [ ] `mvn clean verify` green
 - [ ] Steps 1-3 tests still pass
-- [ ] A listing created before v1.1/v1.2 reads `negotiable`/geo as `null`
+- [ ] A listing created before v1.1 reads `negotiable`/geo as `null`
 
 ---
 
@@ -635,10 +474,10 @@ structural - the V1 API behavior does not change yet.
 
 > **User stories** —
 >
-> - *As an **API consumer**, I want to **explicitly select V1 or V2** via a
->   header or a query parameter, and the API to **return the matching fields**
->   (public vs. owner-only) so that **my code can rely on a stable contract
->   while the platform evolves**.*
+ > - *As an **API consumer**, I want to **explicitly select V1 or V2** via the
+ >   `?version=` query parameter, and the API to **return the matching fields**
+ >   (public vs. owner-only) so that **my code can rely on a stable contract
+ >   while the platform evolves**.*
 > - *As a **platform admin**, I want to **deprecate V1 with clear headers**
 >   (`Deprecation`, `Sunset`) so that **existing clients have a deadline to
 >   migrate**.*
@@ -659,50 +498,47 @@ V2 extends V1 with additional fields:
 
 | # | Requirement |
 |---|---|
-| 6.1 | The client selects the API version via **header** (`X-API-Version: V1` or `V2`) **or** **query parameter** (`?version=V1`). Both are equivalent. |
-| 6.2 | **Default**: if no version is specified, the API responds with **V1** and includes the response header `X-API-Version-Default: V1`. |
+| 6.1 | The client selects the API version via the **query parameter** `?version=V1` or `?version=V2` (lower-case values are also accepted). |
+| 6.2 | **Default**: if no `version` parameter is provided, the API responds with **V1**. |
 | 6.3 | **Invalid version** (e.g. `V99`) → **400** with body: `{ "error": "API version not available", "availableVersions": ["V1", "V2"] }` |
-| 6.4 | **Conflict** (header says `V1`, param says `V2`) → **400** (explicit error, no silent resolution). |
-| 6.5 | **V1 responses** must include the headers: `Deprecation: true` and `Sunset: Sun, 01 Jan 2027 00:00:00 GMT`. |
-| 6.6 | **V2 responses** must NOT include deprecation headers. |
-| 6.7 | **V1** never returns `negotiable` or the private fields (active, address, geo) - regardless of authentication. |
-| 6.8 | **V2 non-seller**: returns `negotiable` but **never** `active`, `streetAddress`, `city`, `postalCode`, `country`, `latitude`, `longitude`. |
-| 6.9 | **V2 seller**: returns ALL fields including private ones. |
-| 6.10 | All business rules from Steps 2-3 (pagination, sellership, 404 on inactive) apply identically in both versions. |
+| 6.4 | **V1 responses** must include the headers: `Deprecation: true` and `Sunset: Sun, 01 Jan 2027 00:00:00 GMT`. |
+| 6.5 | **V2 responses** must NOT include deprecation headers. |
+| 6.6 | **V1** never returns `negotiable` or the private fields (active, address, geo) - regardless of authentication. |
+| 6.7 | **V2 non-seller**: returns `negotiable` but **never** `active`, `streetAddress`, `city`, `postalCode`, `country`, `latitude`, `longitude`. |
+| 6.8 | **V2 seller**: returns ALL fields including private ones. |
+| 6.9 | All business rules from Steps 2-3 (pagination, sellership, 404 on inactive) apply identically in both versions. |
 
 ### OpenAPI
 
 | # | Requirement |
 |---|---|
-| 6.11 | Two **separate** OpenAPI specs are published: one for V1, one for V2, with distinct titles. |
+| 6.10 | Two **separate** OpenAPI specs are published: one for V1, one for V2, with distinct titles. |
 
 ### Hints
 
-- Native Spring versioning: register the two conditions (header `X-API-Version`
-  and parameter `version`) for versions `V1`/`V2` - see
-  `ApiVersioningConfig` (javadoc there points to the mechanism) - then declare
+- Native Spring versioning: register the **query condition** `version` for
+  versions `V1`/`V2` in `ApiVersioningConfig` (via
+  `RequestMappingHandlerMapping.versioningStrategy`) - then declare
   `@RequestMapping(value = "/listings", version = "V1")` (and `"V2"`) on the
   controllers.
-- The fallback (6.2-6.4) is **not** given for free by native versioning: an
-  unspecified version must be routed to V1, an unknown one to 400, and a header/param
-  conflict to 400. Think about where you can inspect both inputs before dispatch
-  (a filter or a `HandlerInterceptor`), or how the V1 controller can also be
-  reachable without any version input.
-- 6.5/6.6: add the `Deprecation` / `Sunset` headers to V1 responses only (e.g. in
-  the same interceptor that knows which version was selected).
-- 6.7-6.9: `application.yml` already sets Jackson to `non_null` inclusion - if the
+- The fallback (6.2) is **not** given for free by native versioning: an
+  unspecified version must be routed to V1, and an unknown one to 400. Think
+  about where you can inspect the query param before dispatch (a filter or a
+  `HandlerInterceptor` / `RequestMappingHandlerMapping#registerDefaultVersioningStrategy`).
+- 6.4/6.5: add the `Deprecation` / `Sunset` headers to V1 responses only (e.g. in
+  the controller or in the same filter/interceptor).
+- 6.6-6.8: `application.yml` already sets Jackson to `non_null` inclusion - if the
   private fields are `null` in the response object, they are omitted from the
   JSON/XML payload. Use that: build the V2 response without private fields for
   non-sellers.
-- 6.11: publish two `GroupedOpenApi` beans (springdoc), one per version, each with
+- 6.10: publish two `GroupedOpenApi` beans (springdoc), one per version, each with
   its own title.
 
 ### Acceptance checklist
 
-- [ ] GET `/listings` (no version) → V1 payload + response header `X-API-Version-Default: V1`
-- [ ] `X-API-Version: V2` → V2 payload; `?version=V2` → identical payload (equivalence)
-- [ ] `X-API-Version: V99` → 400 + `{ "error": "API version not available", "availableVersions": ["V1", "V2"] }`
-- [ ] Header `V1` + `?version=V2` → 400
+- [ ] GET `/listings` (no `version` param) → V1 payload
+- [ ] `?version=V2` → V2 payload · `?version=V1` → identical to no-param (equivalence)
+- [ ] `?version=V99` → 400 + `{ "error": "API version not available", "availableVersions": ["V1", "V2"] }`
 - [ ] V1 responses carry `Deprecation: true` and `Sunset: Sun, 01 Jan 2027 00:00:00 GMT`; V2 responses carry neither
 - [ ] V1 payload never contains `negotiable`, `active`, address or geo fields (for any client)
 - [ ] V2 non-seller: `negotiable` present, all private fields absent · V2 seller: all present
@@ -711,7 +547,7 @@ V2 extends V1 with additional fields:
 
 ---
 
-## Step 7 - Geolocation (GPS enrichment) `CORE`
+## Step 7 - Geolocation (GPS enrichment) `BONUS`
 
 > **User stories** —
 >
@@ -742,7 +578,7 @@ V2 extends V1 with additional fields:
 - Call `GET /search?format=json&limit=1&q={address}` - the response is a JSON
   **array** of objects whose `lat`/`lon` values are **strings** to parse.
 - Put the client behind a small interface (a "port") that the listing service
-  depends on - that is what you will **mock** in tests, and it prepares Step 10.
+  depends on - that is what you will **mock** in tests.
 - Failure path: catch the exception, log at WARN (address + reason), leave the
   coordinates `null`, continue → 200.
 - The `listings.geo.*` block in `application.yml` already exists for the endpoint /
@@ -766,47 +602,38 @@ V2 extends V1 with additional fields:
 
 ---
 
-## Step 8 - Metrics & Logging `CORE`
+## Step 8 - Metrics `CORE`
 
-> **User story** — *As a **developer / ops**, I want the service to expose
-> **counters for successful creations and failed geocodings**, and to log
-> failures with a **reason**, so that I can **monitor, and prove** that the
-> service is working (or failing) — and **diagnose** the cause.*
+> **User story** — *As a **developer / ops**, I want the service to expose a
+> **counter for successful creations**, so that I can **monitor and prove** the
+> service is working.*
 
 ### Custom metrics
 
 | Metric | Type | Trigger |
 |---|---|---|
 | `listings.created` | Counter | Increment on every successful listing creation (201) |
-| `geo.enrich_failed` | Counter | Increment on every failed geocoding call |
 
-### Logging requirements
+### Requirements
 
 | # | Requirement |
 |---|---|
-| 8.1 | Failed geocoding → log at **WARN** level with the reason (see Step 7.3). |
-| 8.2 | Application name is tagged in all metrics (already configured in `application.yml`). |
-| 8.3 | Debug-level SQL logging is available in the `dev` profile only (not by default). |
+| 8.1 | `listings.created` is incremented on every successful creation (201). |
+| 8.2 | The application name is tagged in all metrics (already configured in `application.yml`). |
 
 ### Hints
 
 - Inject `io.micrometer.core.instrument.MeterRegistry`; use
   `meterRegistry.counter("listings.created").increment()` in the create use-case
-  (after the 201 path succeeds), and `counter("geo.enrich_failed")` in the
-  geocoding fallback path (Step 7.3).
+  (after the 201 path succeeds).
 - `management.metrics.tags.application` is already set - every metric you
   register gets the `application="listings"` tag.
 - Check from the browser: `GET /actuator/metrics/listings.created`.
-- `application-dev.yml` already turns on `org.hibernate.SQL: DEBUG` - the
-  requirement is that this must **not** happen outside the `dev` profile.
 
 ### Acceptance checklist
 
 - [ ] `GET /actuator/metrics/listings.created` exists and increments after a successful creation
-- [ ] `GET /actuator/metrics/geo.enrich_failed` increments when geocoding fails (mocked)
-- [ ] Both metrics carry the tag `application="listings"`
-- [ ] Failed geocoding produces a WARN log with a reason
-- [ ] Running without profile: no DEBUG SQL · running with `--spring.profiles.active=dev`: DEBUG SQL visible
+- [ ] The metric carries the tag `application="listings"`
 
 ---
 
@@ -828,38 +655,11 @@ V2 extends V1 with additional fields:
 | 9.6 | Calling this on **V1** → **400** (feature unavailable in this version). |
 | 9.7 | Visibility rules (`active=false`, seller-only private fields) apply as in Step 6. |
 | 9.8 | **(Optional)** Results sorted by distance, closest first. |
-| 9.9 | **(Bonus)** Justify your implementation approach (in-memory filtering over SQLite, SQL-level, bounding box + precision, etc.) in the README. |
+| 9.9 | **(Bonus)** Justify your implementation approach (in-memory filtering, SQL-level, bounding box + precision, etc.) in the README. |
 
 ---
 
-## Step 10 - Hexagonal Architecture `BONUS`
-
-> **User story** — *As a **developer**, I want the codebase to be
-> **layered into `domain` / `application` / `infrastructure`** with dependency
-> rules I can **verify by an architectural test**, so that the **business
-> rules can be tested without Spring or a database**, and the framework stays
-> in the outer ring.*
-
-### Behavior
-
-| # | Requirement |
-|---|---|
-| 10.1 | The codebase is structured in **three layers** with strict dependency direction: |
-| | - `domain`: pure business logic, no framework imports |
-| | - `application`: use cases, ports (interfaces for both inbound and outbound) |
-| | - `infrastructure`: adapters (web, persistence, external services) |
-| 10.2 | `domain` does NOT depend on Spring, JPA, or any web framework. |
-| 10.3 | `application` does NOT depend on `infrastructure` (depends on interfaces/ports instead). |
-| 10.4 | `infrastructure` depends on `domain` and `application`, never the reverse. |
-| 10.5 | All tests from Steps 1-8 (and 9 if done) remain **green** after restructuring. |
-| 10.6 | Provide an architectural test (ArchUnit or similar) that verifies the dependency rules. |
-
-> Note: Step 7 already suggests the "port" split for the geocoding client -
-> re-use it here.
-
----
-
-## Step 11 - Final Integration
+## Step 10 - Final Integration
 
 > **User story** — *As the **team of developers** (and the class evaluating
 > us), we want to **ship a runnable, tested, documented micro-service**, so
@@ -869,11 +669,11 @@ V2 extends V1 with additional fields:
 
 | # | Requirement |
 |---|---|
-| 11.1 | `mvn clean verify` is **green** - all tests pass, including the cumulative Liquibase migrations. |
-| 11.2 | The README documents: how to run, all endpoints with examples (JSON + XML if Step 4 done), versioning usage, GPS fallback behavior, metrics, and your justified technical choices. |
-| 11.3 | Total test count ≥ **20** (unit + integration, + architectural if Step 10 done). |
-| 11.4 | No `TODO` comments and no `Not implemented yet` stubs remain in production code. |
-| 11.5 | Oral presentation: 10 minutes (architecture, key decisions, demo) + 5 minutes Q&A. |
+| 10.1 | `mvn clean verify` is **green** - all tests pass, including the cumulative Liquibase migrations. |
+| 10.2 | The README documents: how to run, all endpoints with examples (JSON + XML if Step 4 done), versioning usage, GPS fallback behavior (if Step 7 done), metrics, and your justified technical choices. |
+| 10.3 | Testing is **optional**: a starter test is provided and enough to get `mvn clean verify` green. If you wrote your own tests, they must all pass; a good target (not a floor) is ~20 across unit + integration. |
+| 10.4 | No `TODO` comments and no `Not implemented yet` stubs remain in production code. |
+| 10.5 | Oral presentation: 10 minutes (architecture, key decisions, demo) + 5 minutes Q&A. |
 
 ---
 

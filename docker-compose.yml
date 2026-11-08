@@ -127,4 +127,11 @@ services:
 #        listings-logs volume already exist; the app just needs to push
 #        OTLP to the network name `otel-collector` (see
 #        ../monitoring/README.md "Run"). No port change (host 8080).
+#
+#  --- TP (Messaging) — in `listings-api` above, add to `environment`:
+#        RABBITMQ_HOST: "rabbitmq"          # the broker, by NETWORK NAME (from inside the container)
+#        RABBITMQ_PORT: "5672"              # the broker's INTERNAL AMQP port (NOT the host 5673)
+#      (host 8080 stays; the broker is on host 5673 AMQP + 15673 mgmt — see
+#      ../messaging/README.md "Run" §0 for the full edit including the
+#      `spring-boot-starter-amqp` dependency and the `spring.rabbitmq` block.)
 # ------------------------------------------------------------------

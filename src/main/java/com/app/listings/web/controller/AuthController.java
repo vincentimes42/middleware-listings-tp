@@ -14,7 +14,7 @@ import org.springframework.web.bind.annotation.RestController;
  * Everything else (UserDetailsService, hashing, uniqueness, 409 / 422 handlers,
  * filter chain) is already provided — see UserService, GlobalExceptionHandler
  * and SecurityConfig. Note: there is NO login endpoint - authentication is
- * HTTP Basic (Step 1.4).
+ * HTTP Basic (Step 1).
  */
 @RestController
 @RequestMapping("/auth")
@@ -22,11 +22,11 @@ public class AuthController {
 
     @PostMapping("/register")
     public Object register() {
-        throw new UnsupportedOperationException("Not implemented yet - exercise.md Step 1.1");
+        throw new UnsupportedOperationException("Not implemented yet - exercise.md Step 1");
     }
 
     @GetMapping("/me")
     public Object me() {
-        throw new UnsupportedOperationException("Not implemented yet - exercise.md Step 1.4");
+        throw new UnsupportedOperationException("Not implemented yet - exercise.md Step 1");
     }
 }

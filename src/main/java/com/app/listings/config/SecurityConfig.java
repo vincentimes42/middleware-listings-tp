@@ -23,7 +23,7 @@ import java.util.List;
  * What this file gives you (so the skeleton boots green on day 1 and the
  * Step 1 wiring work is focused on the controller, not on Security plumbing):
  *
- *  - a `PasswordEncoder` bean (BCrypt, per Step 1.5).
+ *  - a `PasswordEncoder` bean (BCrypt, per Step 1).
  *  - a `UserDetailsService` that loads by email from the `UserRepository`
  *    (via the provided `UserService`), so Basic auth already works:
  *    `curl -u alice@test:secret123 http://localhost:8080/auth/me` will
@@ -43,14 +43,14 @@ import java.util.List;
 @EnableWebSecurity
 public class SecurityConfig {
 
-    /** Step 1.5: the `PasswordEncoder` used for hashing at register time. */
+    /** Step 1: the `PasswordEncoder` used for hashing at register time. */
     @Bean
     public PasswordEncoder passwordEncoder() {
         return new BCryptPasswordEncoder();
     }
 
     /**
-     * Step 1.4 (half of it): the provider that resolves a Basic-auth
+     * Step 1 (half of it): the provider that resolves a Basic-auth
      * login (email) to the stored password hash. `UserServiceImpl`
      * already hashes, so the returned BCrypt hash compares against the
      * plaintext the client sends.

@@ -22,12 +22,12 @@ import java.time.Instant;
  *    password via the provided {@link PasswordEncoder} bean (BCrypt),
  *    and stamps `registration_date` with the current instant.
  *  - {@link #findById(Long)} / {@link #findByEmail(String)}: lookups
- *    used by the controller and by the {@code AppUserDetailsService}
+ *    used by the controller and by the {@code UserDetailsService} bean
  *    (see {@code SecurityConfig}) for Basic-auth.
  *
  * The student's only job in Step 1 is to wire the controller
- * ({@code AuthController}) to this service - see the step's Hints and
- * Acceptance checklist in exercise.md.
+ * ({@code AuthController}) to this service - see the step's "Build it" and
+ * "Verify" in exercise.md.
  */
 @Service
 @Transactional

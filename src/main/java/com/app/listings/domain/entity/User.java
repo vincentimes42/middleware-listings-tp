@@ -16,8 +16,8 @@ import java.time.Instant;
  * User entity - provided with the Step 1 (User Accounts) identity fields.
  *
  * The mapping is complete for the Basic-auth skeleton: the student only
- * needs to wire the controller (exercise.md Step 1.1 / 1.4) and the two
- * lookup use-cases (exercise.md Step 1.4). The service (create / check
+ * needs to wire the controller (exercise.md Step 1) and the two
+ * lookup use-cases (exercise.md Step 1). The service (create / check
  * uniqueness / hashing) is already implemented - see UserServiceImpl.
  *
  * Setters are FLUENT (each setter returns `this`) so callers can chain:

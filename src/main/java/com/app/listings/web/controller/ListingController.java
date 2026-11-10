@@ -9,14 +9,14 @@ import java.util.List;
 /**
  * LISTINGS controller - base version (before versioning).
  *
- * To do:
- *  1. split this controller into V1 and V2 (@RequestMapping(version = "V1"/"V2"))
- *  2. expose the private fields visibility rule (V2)
- *  3. add JSON + XML content negotiation (produces/consumes)
- *  4. add the owner-only rule on PUT / DELETE (403)
- *  5. add the active=false rule (hidden for others, 404 on detail)
- *  6. add filters + pagination
- *  7. implement versioning header + param + fallback (see exercise.md Step 6)
+ * To do (exercise.md):
+ *  - Step 2: wire the five endpoints, pagination (Page) + filters
+ *    (category, maxPrice), 201 + Location, 204 on delete
+ *  - Step 3: anonymous reads (caller = null); owner-only and hidden-listing
+ *    rules are enforced in the service
+ *  - Step 6: declare each endpoint for version "1" and "2" (query parameter
+ *    ?version=V1|V2, configured in ApiVersioningConfig), V2 visibility
+ *  - Step 9 (bonus): distance search on the V2 list
  *
  * The response DTO illustrates the domain/DTO separation.
  */

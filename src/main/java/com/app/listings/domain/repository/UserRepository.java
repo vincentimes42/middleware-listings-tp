@@ -8,10 +8,8 @@ import org.springframework.data.jpa.repository.JpaRepository;
  *
  * The two derived queries below are the ones the skeleton already calls
  * from {@code UserServiceImpl} (email uniqueness on registration, and
- * lookup by email for the {@code AppUserDetailsService}). The `existsByEmail`
- * index on `email` is declared in the v1.0.1 changelog.
- *
- * (If you later add a V2 lookup by `username`, add `findByName` here.)
+ * lookup by email for the {@code UserDetailsService} bean of
+ * {@code SecurityConfig}).
  */
 public interface UserRepository extends JpaRepository<User, Long> {
 

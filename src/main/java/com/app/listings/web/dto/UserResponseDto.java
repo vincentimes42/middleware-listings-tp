@@ -8,7 +8,7 @@ import java.time.Instant;
  * RESPONSE DTO for POST /auth/register (and GET /auth/me) — provided.
  *
  * The password and its hash are NEVER serialized in the response
- * (see exercise.md Step 1.1). All other identity fields are safe to
+ * (see exercise.md Step 1). All other identity fields are safe to
  * publish.
  */
 public class UserResponseDto {

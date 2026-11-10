@@ -3,8 +3,8 @@
 #  Additive migration: v1.0 declared only `id`; this adds the identity
 #  fields exercised by Step 1 (User Accounts). Do NOT edit v1.0.
 #
-#  (Listing columns are added by the student in Step 5, v1.1 / v1.2 -
-#   see db.changelog-master.yaml.)
+#  (Listing columns are added by the student: v1.0.2-listing.yaml in
+#   Step 2, v1.1-v2-fields.yaml in Step 5 - see db.changelog-master.yaml.)
 # =====================================================================
 databaseChangeLog:
 
@@ -20,7 +20,8 @@ databaseChangeLog:
                   type: VARCHAR(254)
                   constraints:
                     nullable: false
-                    # unique index is added by the student in Step 1 (or here, either is fine)
+                    # uniqueness is enforced by UserServiceImpl (409); a DB unique
+                    # constraint is optional, in a NEW changeSet (never here)
         - addColumn:
             tableName: app_user
             columns:

@@ -9,14 +9,13 @@ import java.util.List;
 /**
  * LISTINGS controller - base version (before versioning).
  *
- * To do:
- *  1. split this controller into V1 and V2 (@RequestMapping(version = "V1"/"V2"))
- *  2. expose the private fields visibility rule (V2)
- *  3. add JSON + XML content negotiation (produces/consumes)
- *  4. add the owner-only rule on PUT / DELETE (403)
- *  5. add the active=false rule (hidden for others, 404 on detail)
- *  6. add filters + pagination
- *  7. implement versioning header + param + fallback (see exercise.md Step 6)
+ * To do (step numbers of exercise.md):
+ *  - Step 2  : POST, GET list (pagination + filters), GET detail (404)
+ *  - Step 3  : PUT / DELETE, owner-only rule (403), active=false (hidden, 404)
+ *  - Step 6a : split into ListingControllerV1 / ListingControllerV2
+ *              (version = "V1" / "V2", query parameter ?version= only)
+ *  - Step 6b : owner-only fields in V2
+ *  - Step 4  : (bonus) JSON + XML content negotiation
  *
  * The response DTO illustrates the domain/DTO separation.
  */

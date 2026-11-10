@@ -6,18 +6,9 @@ See [`exercise.md`](exercise.md) for the full statement.
 
 ---
 
-## Before you start
-
-New to **Maven** or **Spring Boot**, or to the domain? Start with the two
-sections at the top of [`exercise.md`](exercise.md):
-
-- **"Before you start — the two tools you will use"** — a 2-minute mental
-  model of Maven and Spring Boot.
-- **"Domain & data model"** — the two actors (Visitor, Seller), the two
-  entities (`User`, `Listing`), their 1-to-N ownership, and the listing
-  lifecycle. Every step below builds on one of these ideas.
-
-Everything else in this README is operational (install, run, tree).
+> This README is **operational** (install, run, build, tree). Read
+> [`exercise.md`](exercise.md) first: it is the source of truth for the steps,
+> the domain, and how each step is verified.
 
 ---
 
@@ -158,14 +149,14 @@ mvn clean verify
 ```
 
 The provided `ListingsSmokeTest` boots the full context, so it needs that
-Postgres (or your Testcontainers setup, see exercise.md). Unit tests don't.
+Postgres. Writing more tests is optional (see exercise.md, Appendix C).
 
 ## Tree
 
 ```
 <project>/                                  # this folder
 ├── README.md                           # this file — how to install / run / build
-├── exercise.md                         # the statement (Steps 1–11)
+├── exercise.md                         # the statement (Steps 1-10)
 ├── pom.xml                             # Maven build (Boot 4.1.1, Java 27, PostgreSQL)
 ├── Dockerfile                          # 3-stage build: JDK 27 + Maven -> JRE 27
 ├── docker-compose.yml                  # THE BASE for the whole lab: API (8080) +
@@ -184,26 +175,30 @@ Postgres (or your Testcontainers setup, see exercise.md). Unit tests don't.
 │   │       ├── ListingService.java
 │   │       └── ListingServiceImpl.java
 │   ├── config/
-│   │   ├── ApiVersioningConfig         # API versioning
-│   │   └── SecurityConfig              # HTTP Basic (no session)
+│   │   ├── ApiVersioningConfig.java    # API versioning - Step 6a
+│   │   └── SecurityConfig.java         # HTTP Basic - provided, refined in Steps 2-3
 │   ├── domain/
 │   │   ├── Category.java               # enum (9 values)
 │   │   ├── Role.java                   # enum (SELLER)
 │   │   ├── entity/
-│   │   │   ├── User.java               # maps to table `app_user` (id only, to complete)
-│   │   │   └── Listing.java            # maps to table `listing` (id only, to complete)
+│   │   │   ├── User.java               # table `app_user` - provided (identity fields)
+│   │   │   └── Listing.java            # table `listing` (id only) - Steps 2, 5
+│   │   ├── exception/
+│   │   │   └── EmailAlreadyExistsException.java  # provided (409)
 │   │   └── repository/
-│   │       ├── UserRepository.java
-│   │       └── ListingRepository.java
+│   │       ├── UserRepository.java     # provided
+│   │       └── ListingRepository.java  # Step 2
 │   └── web/
 │       ├── controller/
-│       │   ├── AuthController.java     # /auth/register, /auth/me (Basic auth)
-│       │   └── ListingController.java
+│       │   ├── AuthController.java     # /auth/register, /auth/me - Step 1
+│       │   └── ListingController.java  # /listings - Steps 2-3, split in Step 6a
 │       ├── dto/
-│       │   ├── ListingRequestDto.java  # to be completed
-│       │   └── ListingResponseDto.java # to be completed
+│       │   ├── UserRequestDto.java     # provided
+│       │   ├── UserResponseDto.java    # provided
+│       │   ├── ListingRequestDto.java  # Step 2
+│       │   └── ListingResponseDto.java # Step 2
 │       └── advice/
-│           └── GlobalExceptionHandler.java
+│           └── GlobalExceptionHandler.java  # 409/422/500 provided, rest to add
 │
 ├── src/main/resources
 │   ├── application.yml                 # main configuration (PostgreSQL, actuator,
@@ -211,7 +206,8 @@ Postgres (or your Testcontainers setup, see exercise.md). Unit tests don't.
 │   ├── application-dev.yml
 │   └── db/changelog/
 │       ├── db.changelog-master.yaml    # orchestrates the migrations
-│       └── v1.0-init.yaml              # initial schema (id only) - to be completed
+│       ├── v1.0-init.yaml              # initial schema (ids only) - never edit
+│       └── v1.0.1-identity.yaml        # identity columns on app_user - never edit
 │
 └── src/test/java/com/app/listings
     └── ListingsSmokeTest.java          # context test (starting point; needs a
@@ -227,7 +223,7 @@ applied at startup, in order, and recorded.
 
 ### Why
 
-- The schema **evolves** through the exercise (Steps 1, 2, 5 add columns).
+- The schema **evolves** through the exercise (Steps 2 and 5 add columns).
   Liquibase lets you change it **without dropping/rebuilding Postgres** — it
   only applies the changes it has not run yet.
 - Every change is auditable in `DATABASECHANGELOG` (a table Liquibase creates
@@ -242,16 +238,24 @@ applied at startup, in order, and recorded.
 ```
 src/main/resources/db/changelog/
 ├── db.changelog-master.yaml    # the entry-point: includes the other files
-└── v1.0-init.yaml              # already provided: creates user.id + listing.id
+├── v1.0-init.yaml              # provided: creates app_user.id + listing.id
+├── v1.0.1-identity.yaml        # provided: identity columns on app_user
+├── v1.0.2-listing.yaml         # you, Step 2: V1 columns on listing
+└── v1.1-v2-fields.yaml         # you, Step 5: V2 columns on listing
 ```
 
-`db.changelog-master.yaml` is a list of `include` statements in order:
+`db.changelog-master.yaml` is a list of `include` statements, applied in order:
 
 ```yaml
 databaseChangeLog:
   - include:
       file: classpath:db/changelog/v1.0-init.yaml
-  # Step 5: add this line here:
+  - include:
+      file: classpath:db/changelog/v1.0.1-identity.yaml
+  # Step 2:
+  # - include:
+  #     file: classpath:db/changelog/v1.0.2-listing.yaml
+  # Step 5:
   # - include:
   #     file: classpath:db/changelog/v1.1-v2-fields.yaml
 ```
@@ -276,12 +280,7 @@ A changeSet that **adds a column** (used in Step 5):
                 type: BOOLEAN
 ```
 
-You do the same for the Step 1/2 columns (email, username, passwordHash,
-role, registrationDate on `user`; title, description, price, category,
-creationDate, active, user_id on `listing`) — either by adding changeSets
-to `v1.0-init.yaml` **before** you run the app for the first time, or by
-creating new `v1.x-*.yaml` files. Both are correct; the difference is only
-whether the schema is "already built" or "grows on the fly".
+Which columns go in which file is defined by exercise.md (Steps 2 and 5).
 
 > **Rule of the exercise**: never edit an already-published changeSet — add
 > a new one instead.
@@ -295,21 +294,41 @@ whether the schema is "already built" or "grows on the fly".
 
 ---
 
+## Optional dependency edits (bonus steps)
+
+The skeleton's `pom.xml` is complete for the core. The only addition the
+exercise prescribes is for **Step 4** (XML, bonus) — add it to `<dependencies>`
+(what/why: exercise.md, Appendix B):
+
+```xml
+<dependency>
+    <groupId>tools.jackson.dataformat</groupId>
+    <artifactId>jackson-dataformat-xml</artifactId>
+    <!-- version managed by the Spring Boot BOM -->
+</dependency>
+```
+
+Then rebuild: `docker compose up -d --build`.
+
 ## To implement (reminder - see exercise.md)
 
-**Core** (must fit the 8h session)
-1. **User accounts** (register, HTTP Basic auth, `/auth/me`)
-2. **Business endpoints** (POST / GET / PUT / DELETE `/listings`, ownership rules)
-3. **Security rules** (public read, SELLER write, owner-only, actuator public)
-4. **Schema evolution**: changelog `v1.1` (all new V2 columns: negotiable + address + GPS)
-5. **Versioning** V1 + V2 (native Spring query-param `?version=`, default V1;
-   private-field visibility in V2; two OpenAPI specs)
-6. **Metrics** (`listings.created`)
+Step numbers are the ones of exercise.md.
+
+**Core** (~5h30-6h, in this order)
+- **Step 1** — User accounts (wire `/auth/register`, `/auth/me`)
+- **Step 2** — Listings: create and browse (V1 columns, POST, public GET, pagination, filters)
+- **Step 3** — Security rules: ownership (403) and lifecycle (`active`)
+- **Step 5** — Schema evolution: changelog `v1.1` (negotiable + address + GPS)
+- **Step 6a** — Versioning: `?version=`, default V1, 400, Deprecation/Sunset
+- **Step 6b** — V2 contract: owner-only fields, two OpenAPI specs
+- **Step 8** — Metrics (`listings.created`)
 
 **Bonus** (start only when the core is green)
-7. **GPS enrichment**: Nominatim consumption (`RestClient`) + 3 s fallback
-8. **Content negotiation** JSON + XML (add `jackson-dataformat-xml`, see exercise.md Appendix B)
-9. **Distance search** (V2)
+- **Step 4** — Content negotiation JSON + XML
+- **Step 7** — GPS enrichment (Nominatim, `RestClient`, 3 s fallback)
+- **Step 9** — Distance search (V2)
+
+**Delivery** — **Step 10**, final checks.
 
 > **Technical note**: the database is **PostgreSQL**. The referential
 > integrity between `listing` and `app_user` is carried by a JPA relation

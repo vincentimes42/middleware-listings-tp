@@ -31,13 +31,14 @@ import java.util.List;
  *    That's a good "does Security work?" smoke test the moment you start.
  *  - a `SecurityFilterChain` that exposes `/auth/register`,
  *    `/actuator/**`, `/v3/api-docs/**`, and `/swagger-ui/**` (public)
- *    and requires authentication for the rest. Step 3 refines this.
+ *    and requires authentication for the rest. Step 2 opens the public
+ *    GET /listings*, Step 3 restricts writes to the SELLER role.
  *
  * What the student still does in Step 1 (the only remaining work):
  *  - wire `AuthController` (`/auth/register`, `/auth/me`) to the provided
  *    `UserService` + DTOs — the "wiring" the step is teaching.
- *  - tighten the `SecurityFilterChain` in Step 3 (public read, `SELLER`
- *    write, non-owner `403`).
+ *  - refine the `SecurityFilterChain`: public read (Step 2), `SELLER`
+ *    write (Step 3). The non-owner `403` is a service rule (Step 3).
  */
 @Configuration
 @EnableWebSecurity

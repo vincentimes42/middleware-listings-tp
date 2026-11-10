@@ -2,29 +2,23 @@
 
 ## Overview
 
-You are building a **classifieds listings** micro-service, in pairs, for a session of
-about 8 hours. The skeleton project you receive already compiles, starts, and passes
-a context test. Your job is to implement the API **feature by feature**, in the order
-below.
+You are building a **classifieds listings** micro-service, in pairs, in a session of
+about **6 hours** (the core is sized for ~5h30-6h; the bonus steps overflow). The
+skeleton you receive already compiles, starts, and passes a context test. Your job
+is to implement the API **feature by feature**, in the order below.
 
-For each step you are encouraged (but **not required**) to **write tests first**,
-see them fail, then implement until they pass. A starter test is already provided;
-additional tests are a good way to convince yourselves a step is done, but writing
-your own test suite is **optional** — the graded acceptance checklist below is what
-matters.
+**How each step is validated** — every step ends with a `Verify` checklist that you
+run by hand with `curl`, `psql` or `grep` against the running stack (see
+*Conventions — how to validate each step*). That checklist is the contract.
+Writing Java tests is **encouraged but optional**: it is not part of the
+deliverable (see Appendix C if you want to write some).
 
-The specification below describes **behaviors, contracts, and response codes**.
-It does NOT prescribe the internal implementation (framework classes, design
-patterns, or library choices). You are free to structure the code however you
-see fit, provided the **observable behavior** matches the specification.
+The specification describes **behaviors, contracts, and response codes**. It does
+not prescribe the internal design: you may structure the code as you see fit,
+provided the **observable behavior** matches.
 
-> **Testing note**: `spring-boot-starter-test` and `spring-security-test` are
-> already on the classpath, in case you want to build your own tests. The
-> *Testing strategy* section below is an optional reference for how to write
-> them. If you do write tests: use the web test client of your Boot version to
-> test endpoints end-to-end, and simulate HTTP Basic users with `httpBasic(...)`
-> from `spring-security-test`. External collaborators (e.g. the geocoding
-> client) must be **mocked** in tests — never call the real Nominatim service.
+> Prereq — the stack runs and `curl -fsS http://localhost:8080/actuator/health`
+> answers `UP` (see **README**, *Prerequisites* and *Run*).
 
 ---
 
@@ -52,8 +46,12 @@ touch `jar` files by hand.
 `@Service`, `@Repository`, `@Entity`, `@Configuration` + a few `application.yml`
 keys give you the HTTP server, DataSource, security chain and Liquibase — you
 don't write that plumbing yourself. If a behaviour feels "magical", look up the
-annotation or `yml` key in the Bootstrap/Boot 4.1 reference:
-<https://docs.spring.io/spring-boot/4.1.1/reference/html/index.html>
+annotation or `yml` key in the reference documentation of the exact versions
+used by the project:
+
+- Spring Boot 4.1.1: <https://docs.spring.io/spring-boot/4.1.1/index.html>
+- Spring Framework 7 (web, API versioning): <https://docs.spring.io/spring-framework/reference/web/webmvc-versioning.html>
+- Spring Security 7: <https://docs.spring.io/spring-security/reference/index.html>
 
 ---
 
@@ -67,11 +65,18 @@ is one facet of this domain.
 | Actor | What they can do |
 |---|---|
 | **Visitor** (anonymous) | Browse and read any *active* listing. No account. |
-| **Seller** (the only role) | A registered user who creates and manages **their own** listings. Every registered account is a `SELLER`. There is no platform-admin role in this exercise. |
+| **Seller** (authenticated, role `SELLER`) | Creates listings and manages **the ones they own**. Every registered account has the role `SELLER`; there is no admin role. |
+
+Two words, two ideas — keep them apart:
+
+- **`SELLER`** is a **role**: it says *who may write at all* (otherwise **401**).
+- **owner** is a **relationship** between one listing and one user: it says
+  *who may change this listing* (otherwise **403**). Every owner is a `SELLER`;
+  most `SELLER`s are **not** the owner of a given listing.
 
 ### Entities
 
-**`User`** — a seller account.
+**`User`** — a seller account (provided by the skeleton).
 
 | attribute | note |
 |---|---|
@@ -84,42 +89,57 @@ is one facet of this domain.
 
 **`Listing`** — an item offered for sale.
 
-| attribute | V1 | V2 (added in Steps 5-6) | visible to |
-|---|:--:|:--:|---|
-| `id`, `title` (1-120), `description` (0-2000), `price` (>0), `category` (9 values), `creationDate` | ✓ | ✓ | everyone (public) |
-| `active` | ✓ | ✓ | owner only (others see only `true` listings) |
-| `negotiable` | — | ✓ | everyone (public) |
-| `streetAddress`, `city`, `postalCode`, `country`, `latitude`, `longitude` | — | ✓ | owner only (private) |
+| attribute | V1 response | V2 response (Steps 5-6) |
+|---|:--:|---|
+| `id`, `title` (1-120), `description` (0-2000), `price` (>0), `category` (9 values), `creationDate` | yes | yes — everyone |
+| `negotiable` | no | yes — everyone |
+| `active` | no (write-only, via PUT) | owner only |
+| `streetAddress`, `city`, `postalCode`, `country`, `latitude`, `longitude` | no | owner only |
 
 ### Relationship
 
-`User` **1 —— 0..N** `Listing` — a listing always belongs to exactly one seller
-(its owner); a seller can own many listings. Carried by `listing.user_id`
-(`@ManyToOne` on the `Listing` entity) — referential integrity is JPA's job
-(the skeleton does not declare SQL foreign keys; see README).
+`User` **1 —— 0..N** `Listing` — a listing always belongs to exactly one user
+(its **owner**); a user can own many listings. Carried by the column
+`listing.user_id` (`@ManyToOne owner` on the `Listing` entity). Referential
+integrity is JPA's job; a DB-level foreign key is optional.
 
 ### Lifecycle
 
-A listing is born `active = true`. The seller can **hide** it (`active = false`)
-and reactivate it later. A hidden listing is invisible in lists for everyone
-but the owner and reads as **404** for non-owners; the owner alone still sees it.
+A listing is born `active = true`. The owner can **hide** it (`active = false`)
+and reactivate it later. A hidden listing is absent from lists and reads as
+**404** for everyone but its owner; the owner still sees it.
 
-> Hold these four ideas in mind — *actors, the two entities, the 1-to-N
-> ownership, and the active lifecycle* — because almost every requirement
+> Hold these four ideas in mind — *actors (role vs owner), the two entities, the
+> 1-to-N ownership, and the active lifecycle* — because almost every requirement
 > below is a rule about one of them.
 
 ---
 
 ## Scope
 
-| Track | Steps |
-|---|---|
-| **Core** (required - must fit in the 8h) | 1 · 2 · 3 · 5 · 6 · 8 |
-| **Bonus** (start only when the core checklists are green) | 4 (JSON + XML) · 7 (GPS enrichment) · 9 (distance search) |
-| **Delivery** | 10 (final integration) |
+| Track | Steps | Budget (pair) |
+|---|---|---|
+| **Core** (required, in this order) | 1 · 2 · 3 · 5 · 6a · 6b · 8 | ~5h30-6h |
+| **Bonus** (start only when the core checklists are green) | 4 (JSON + XML) · 7 (GPS enrichment) · 9 (distance search) | — |
+| **Delivery** | 10 (final checks) | — |
 
-Work the core steps **in order**; each step's acceptance checklist is your
-"definition of done" for that step.
+| Step | Title | Track | Budget |
+|---|---|---|---|
+| 1 | User accounts | CORE | 0h45 |
+| 2 | Listings: create and browse (V1) | CORE | 1h15 |
+| 3 | Security rules: ownership and lifecycle | CORE | 1h15 |
+| 4 | Content negotiation (JSON + XML) | BONUS | — |
+| 5 | Schema evolution (V2 columns) | CORE | 0h20 |
+| 6a | Versioning: routing, default, deprecation | CORE | 1h00 |
+| 6b | V2 contract: visibility and OpenAPI | CORE | 1h00 |
+| 7 | Geolocation (GPS enrichment) | BONUS | — |
+| 8 | Metrics | CORE | 0h20 |
+| 9 | Distance search | BONUS | — |
+| 10 | Final checks | DELIVERY | 0h15 |
+
+> The bonus steps keep their historical numbers (4, 7, 9) so that the follow-up
+> TPs can reference "TP1 Step N" unambiguously. **Skip them on the first pass**:
+> do 1 → 2 → 3 → 5 → 6a → 6b → 8, then come back.
 
 ---
 
@@ -127,564 +147,629 @@ Work the core steps **in order**; each step's acceptance checklist is your
 
 - All timestamps are ISO-8601.
 - All monetary amounts are decimal (2 digits).
-- All error responses are JSON: `{ "timestamp": "...", "status": 4xx, "error": "...", "message": "..." }` (add a `fields` map for validation errors).
-- Content types: `application/json` by default; `application/xml` is added if you complete Step 4 (bonus).
-- The API supports **two versions** (once enabled): `V1` and `V2` (Step 6).
-- Authentication is **HTTP Basic** (no form, no session).
+- Content type: `application/json` by default (`application/xml` is added in Step 4, bonus).
+- Authentication is **HTTP Basic** (no form, no session, no login endpoint).
+- The API supports **two versions** once Step 6a is done: `V1` and `V2`, selected
+  with the query parameter `?version=`.
+- Every error response is JSON:
+  `{ "timestamp": "...", "status": 4xx, "error": "...", "message": "..." }`
+  (+ a `fields` map for validation errors, + `availableVersions` for an unknown version).
+- List responses are paginated with this shape (Spring Data `PagedModel`):
+
+  ```json
+  { "content": [ { "id": 1, "title": "..." } ],
+    "page": { "size": 20, "number": 0, "totalElements": 1, "totalPages": 1 } }
+  ```
+
+### Error handling & status codes (cross-cutting)
+
+Whenever a step says "→ 409", the HTTP response must carry status 409 **and** a
+JSON body in the format above.
+
+| Status | Trigger | Raised by | Mapped by |
+|---|---|---|---|
+| 400 | Unknown API version (Step 6a); invalid distance parameters (Step 9) | framework (`InvalidApiVersionException`) / your code | your `@ExceptionHandler` |
+| 401 | Write without valid Basic credentials | Spring Security (filter) | Spring Security |
+| 403 | Authenticated user who is not the listing's owner (Step 3) | your service (`AccessDeniedException`) | your `@ExceptionHandler` |
+| 404 | Unknown listing; hidden listing seen by a non-owner (Steps 2-3) | your service (`ResourceNotFoundException`, to create) | your `@ExceptionHandler` |
+| 406 | `Accept` type not supported (Step 4) | framework | your `@ExceptionHandler` |
+| 409 | Duplicate email on registration (Step 1) | provided service | **provided** |
+| 415 | `Content-Type` not supported (Step 4) | framework | your `@ExceptionHandler` |
+| 422 | DTO validation errors, with `fields` (Steps 1-2) | framework (`@Valid`) | **provided** |
+| 500 | Unexpected error | — | **provided** (generic handler) |
+
+> **Trap** — the provided generic handler catches `Exception`. Any exception you
+> do not map explicitly (an `AccessDeniedException` thrown by your service, for
+> instance) becomes a **500**. Each status above needs its own `@ExceptionHandler`
+> in `web/advice/GlobalExceptionHandler.java`.
+
+Custom domain exceptions live in `com.app.listings.domain.exception` (next to the
+provided `EmailAlreadyExistsException`).
+
+### Conventions — how to validate each step
+
+Every `Verify` item is a command you run against the stack started with
+`docker compose up -d --build` (rebuild after each code change). Define these
+shell variables once per terminal:
+
+```bash
+API=http://localhost:8080
+ALICE=alice@test.org:secret123     # owner of the listings she creates
+BOB=bob@test.org:secret123         # another SELLER, never the owner of Alice's listings
+PSQL="docker compose exec -T listings-postgres psql -U listings -d listings -c"
+```
+
+- `curl -i` prints the status line and headers: read the status **there**.
+- `-u "$ALICE"` sends HTTP Basic credentials; no `-u` = anonymous.
+- `$PSQL "select ..."` reads the database directly.
+- Logs: `docker compose logs listings-api | grep <pattern>`.
+
+A step is done when **every** box of its `Verify` list is ticked.
 
 ---
 
-## Error handling & status codes (cross-cutting)
+## Step 1 - User accounts   [CORE]
 
-Every step below relies on this table. Whenever a behavior says "→ 409", you must
-make the actual HTTP response carry status 409 with a JSON body and a useful
-`message`.
+**Outcome** — a visitor can create an account, then authenticate with HTTP Basic
+and read their own profile on `GET /auth/me`.
 
-| Status | Trigger | Suggested mechanism |
-|---|---|---|
-| 400 | Unknown API version (e.g. `V99` — Step 6); missing or invalid distance parameters (Step 9) | custom `InvalidApiVersionException` |
-| 401 | Unauthenticated write (Basic credentials missing or invalid) | Spring Security |
-| 403 | Non-seller PUT / DELETE (Step 3.3) | `AccessDeniedException` |
-| 404 | Unknown listing; `active=false` listing seen by a non-seller (Step 2) | custom `ResourceNotFoundException` (domain) |
-| 409 | Duplicate email on registration (Step 1.2) | custom `EmailAlreadyExistsException` (domain) |
-| 415 | Request with unsupported `Content-Type` (Step 4) | `HttpMediaTypeNotSupportedException` |
-| 406 | Response type unsupported by `Accept` (Step 4) | `HttpMediaTypeNotAcceptableException` |
-| 422 | DTO validation errors, with a `fields` map (Steps 1, 2) | `MethodArgumentNotValidException` (already handled in the skeleton's `GlobalExceptionHandler`) |
-| 500 | Unexpected error | generic handler (already in the skeleton) |
+### Build it
 
-Hints:
+1. **Read** what is provided (do not re-implement it): `User`, `UserRepository`,
+   `UserService` / `UserServiceImpl` (uniqueness → 409, BCrypt, `role = SELLER`),
+   `UserRequestDto` (validation), `UserResponseDto.from(User)` (no password),
+   `GlobalExceptionHandler` (409, 422) and `SecurityConfig` (`httpBasic`, BCrypt,
+   `UserDetailsService` by email, `/auth/register` public).
+2. **Modify** `web/controller/AuthController.java` — inject `UserService`.
+3. **Wire** `register`: take a validated `UserRequestDto` body, call
+   `userService.register(...)`, return the `UserResponseDto` with status **201**
+   and a `Location` header pointing at the new resource.
+4. **Wire** `me`: resolve the authenticated principal (its username is the
+   email), load the user through `UserService`, return its `UserResponseDto`.
+5. **Rebuild** the stack and run `Verify`.
 
-- Extend `web/advice/GlobalExceptionHandler.java` with one `@ExceptionHandler` per
-  missing case (400 / 403 / 404 / 409 / 415 / 406). Keep the response format above.
-- Put your custom domain exceptions under `com.app.listings.domain` (or
-  `com.app.listings.domain.exception`) so that services can throw them and
-  controllers stay thin.
-- Error (4xx) bodies are **JSON**, even if the client requested XML (Step 4.6).
+### Expected behavior
 
----
-
-## Testing strategy (how to test what, if you choose to)
-
-This section is **optional reading** — writing tests is not a deliverable
-(see the Overview). The three test levels below are what to think about if you
-do write some; pick the lowest level that covers the behaviour you want to
-pin down.
-
-### The three levels
-
-| Level | What it covers | Boots Spring? | Fast? | Typical annotation / client |
-|---|---|---|---|---|
-| **Unit** | one service / use-case with its collaborators faked | no | yes | `@ExtendWith(MockitoExtension.class)` |
-| **Slice** (optional) | the web layer only (controllers + validation + `@ControllerAdvice`), with collaborators faked | a thin Spring slice | yes | `@WebMvcTest` |
-| **Integration** | the real stack: context, PostgreSQL, Liquibase, JPA, Security, end-to-end behaviour | yes | no | `@SpringBootTest(webEnvironment = RANDOM_PORT)` + `WebTestClient` |
-
-You do **not** have to cover everything at every level. A good split is:
-- **most** business rules (Steps 1-3, ownership, `active=false`, versioning
-  visibility) as **unit tests** on your services, with a mocked repository;
-- **end-to-end contracts** (status codes, JSON shape, Security 401/403) as a
-  handful of **integration tests** (if you write them — see Step 10.3: writing
-  your own suite is optional).
-
-> **If you write tests**: name each test for the **behaviour** it checks
-> (`nonOwnerUpdateIsRejected`, not `updateTest`); assert the **observable
-> contract** (status, JSON fields, response headers), not internal wiring.
-> The geocoding port (Step 7) must always be **mocked** — never call the real
-> Nominatim service from a test (rate-limited, flaky). `spring-boot-starter-test`
-> and `spring-security-test` are already on the classpath (JUnit 5, AssertJ,
-> Mockito).
-
----
-
-## Step 1 - User Accounts `CORE`
-
-> **User story** — *As a **Visitor** who wants to sell, I want to **register
-> an account** so that I can **publish, update and withdraw my listings** —
-> and **be identified as their owner by the platform**.*
-
-### Behavior
-
-| # | Requirement |
+| # | Rule |
 |---|---|
-| 1.1 | A user can **register** a new account with `email`, `username`, and `password`. On success the account is created and a **201** is returned with the created resource (the response must NOT contain the password or its hash). |
-| 1.2 | If the email is already registered → **409 Conflict**. |
-| 1.3 | If any field is missing or invalid (e.g. empty email, password < 6 chars) → **422 Unprocessable Entity** with per-field error messages. |
-| 1.4 | Authentication is **HTTP Basic** - no login form, no session. An authenticated request simply carries the `Authorization` header. `GET /auth/me` returns the currently authenticated account (**200**) or **401** when anonymous. |
-| 1.5 | Passwords must be **hashed** at rest (plain text never persisted). |
-| 1.6 | All new accounts receive the role **SELLER**. |
-
-### Endpoints
+| 1.1 | `POST /auth/register` with `email`, `username`, `password` → **201**, body = the account, `Location` header set. The body never contains `password` nor `passwordHash`. |
+| 1.2 | Same email twice → **409**. |
+| 1.3 | Missing or invalid field (bad email, password < 6 chars) → **422** + `fields`. |
+| 1.4 | `GET /auth/me` with valid Basic credentials → **200** (`id`, `email`, `username`, `role`, `registrationDate`); anonymous or wrong password → **401**. |
+| 1.5 | The password is stored hashed (BCrypt). |
+| 1.6 | Every new account has the role `SELLER`. |
 
 | Method | Path | Auth | Success |
 |---|---|---|---|
-| POST | `/auth/register` | Public | 201 |
+| POST | `/auth/register` | public | 201 |
 | GET | `/auth/me` | HTTP Basic | 200 |
 
-### What is already provided (do not re-implement)
+### Verify
 
-- `User` entity, `UserRepository` (with `existsByEmail` / `findByEmail`).
-- `UserService` / `UserServiceImpl` - `register(UserRequestDto)` already does the
-  email-uniqueness check (409), BCrypt hashing, and `role = SELLER`.
-- `UserRequestDto` (with jakarta.validation: `@Email`, `@NotBlank`, `@Size(min=6)`)
-  and `UserResponseDto.from(User)` (which never exposes the password hash).
-- `GlobalExceptionHandler` - 409 (`EmailAlreadyExistsException`) and 422
-  (validation, with a `fields` map) are already mapped.
-- `SecurityConfig` - `httpBasic()`, a `PasswordEncoder` (BCrypt), a
-  `UserDetailsService` that loads by email, and a `SecurityFilterChain` that
-  lets `/auth/register` through while the rest requires Basic auth.
+- [ ] `curl -i -X POST $API/auth/register -H 'Content-Type: application/json' -d '{"email":"alice@test.org","username":"alice","password":"secret123"}'` → **201**, `Location:` header, `"role":"SELLER"`, no `password` in the body
+- [ ] Same command again → **409** + JSON body with a `message`
+- [ ] `curl -i -X POST $API/auth/register -H 'Content-Type: application/json' -d '{"email":"nope","username":"x","password":"123"}'` → **422** + `fields.email` and `fields.password`
+- [ ] Register Bob the same way (`bob@test.org` / `secret123`) → **201**
+- [ ] `curl -i $API/auth/me` → **401**
+- [ ] `curl -i -u "$ALICE" $API/auth/me` → **200**, `"email":"alice@test.org"`
+- [ ] `curl -i -u alice@test.org:wrong $API/auth/me` → **401**
+- [ ] `$PSQL "select email, role, left(password_hash, 4) from app_user"` → hashes start with `$2a$` (BCrypt), never the raw password
 
-### What you still do in this step
+### If you are stuck
 
-- Wire `AuthController.register` to call `userService.register(dto)` and return
-  `UserResponseDto.from(user)` as **201**. Annotate the request
-  parameter `@Valid` so it is validated, and build a `URI` location so
-  Spring returns the `Location` header (use `ServletUriComponentsBuilder`).
-- Wire `AuthController.me` to resolve the current user from
-  `SecurityContextHolder` and return a `UserResponseDto` shaped response (id,
-  email, username, role - no password). If anonymous, Spring Security will
-  already return **401** before your code runs.
-
-### Optional
-
-- Test both endpoints with `spring-security-test`: `httpBasic("alice@test.org",
-  "secret123")`.
-
-### Acceptance checklist
-
-- [ ] POST `/auth/register` valid → 201 + body (email, username, role, … - no password)
-- [ ] POST `/auth/register` same email twice → 409 + JSON body
-- [ ] POST `/auth/register` invalid email / short password → 422 + `fields`
-- [ ] GET `/auth/me` without credentials → 401
-- [ ] GET `/auth/me` with valid Basic credentials → 200
+- Validation is triggered by `@Valid` on the `@RequestBody` parameter; the 422 mapping is already in `GlobalExceptionHandler`.
+- `Location`: `ServletUriComponentsBuilder.fromCurrentRequest()` + `ResponseEntity.created(uri)`.
+- Current user: an `Authentication` (or `@AuthenticationPrincipal UserDetails`) method parameter, or `SecurityContextHolder.getContext().getAuthentication()`. Its `getName()` is the email (see `SecurityConfig#userDetailsService`).
+- 401 on `/auth/me` is produced by Spring Security before your code runs — nothing to code for it.
+- Docs: Spring Security 7, *Servlet Authentication Architecture* — `SecurityContextHolder`.
 
 ---
 
-## Step 2 - Listings CRUD (Version 1) `CORE`
+## Step 2 - Listings: create and browse (V1)   [CORE]
 
-> **User stories** —
->
-> - *As a **Seller**, I want to **publish, read, update and withdraw an item** so
->   that I can **manage my offers**.*
-> - *As a **Visitor**, I want to **browse active listings, with filters and
->   pagination**, so that I can **find what I'm looking for without an account**.*
+**Outcome** — an authenticated `SELLER` publishes a listing; anyone can read one
+listing or browse a paginated, filtered list without an account.
 
-### Data contract (V1)
+### Build it
 
-The V1 listing exposes **only public fields**:
+1. **Create** `src/main/resources/db/changelog/v1.0.2-listing.yaml` — one new
+   changeSet that **adds** the V1 columns to `listing`: `title`, `description`,
+   `price`, `category`, `creation_date`, `active`, `user_id` (`addColumn` only;
+   never edit `v1.0-init.yaml`, it is already applied).
+2. **Modify** `db.changelog-master.yaml` — include `v1.0.2-listing.yaml` after
+   `v1.0.1-identity.yaml`.
+3. **Modify** `domain/entity/Listing.java` — map the V1 columns and the
+   `@ManyToOne` relation `owner` (→ `user_id`), with getters and fluent setters.
+4. **Complete** `web/dto/ListingRequestDto.java` (V1 writable fields + validation)
+   and `web/dto/ListingResponseDto.java` (V1 public fields only: no `active`).
+5. **Create** `domain/exception/ResourceNotFoundException.java` and **add** its
+   `@ExceptionHandler` (→ 404) in `GlobalExceptionHandler`.
+6. **Modify** `domain/repository/ListingRepository.java` — paginated queries for
+   the list, with the optional filters `category` and `maxPrice`, active listings only.
+7. **Implement** `create`, `findById` and the list use-case in
+   `ListingServiceImpl` (the creator becomes the owner; `active = true`;
+   `creationDate = now`).
+8. **Modify** `ListingController` — `POST /listings`, `GET /listings`,
+   `GET /listings/{id}`; return the list as a `PagedModel` (see Conventions).
+9. **Modify** `config/SecurityConfig.java` — make `GET /listings` and
+   `GET /listings/**` public. All other `/listings` requests stay authenticated.
+10. **Rebuild** and run `Verify`.
 
-| Field | Type | Required (write) |
-|---|---|---|
-| `id` | long | read-only |
-| `title` | string (1–120) | Yes |
-| `description` | string (0–2000) | No |
-| `price` | decimal (positive) | Yes |
-| `category` | enum (9 values, see `Category`) | Yes |
-| `creationDate` | date | read-only |
-| `active` | boolean | managed via PUT (seller only) |
+### Expected behavior
 
-### Behavior
-
-| # | Requirement |
+| # | Rule |
 |---|---|
-| 2.1 | **Create**: a `SELLER` can POST a new listing. Returns **201** + created resource. |
-| 2.2 | **List**: `GET` returns a **paginated** list (default page size ≤ 20). Supports filters: `category`, `maxPrice`. |
-| 2.3 | **Read**: `GET /{id}` returns the listing or **404** if not found. |
-| 2.4 | **Update**: the **seller only** can PUT. Returns **200**. Non-seller → **403**. |
-| 2.5 | **Delete**: the **seller only** can DELETE. Returns **204**. Non-seller → **403**. |
-| 2.6 | Unauthenticated write attempts → **401**. |
-| 2.7 | Validation errors → **422** with `fields` map. |
-| 2.8 | `active` can be toggled by the seller via PUT. |
-| 2.9 | An `active=false` listing is **not** returned in list responses for non-sellers (anonymous or other SELLERs). |
-| 2.10 | An `active=false` listing returns **404** on detail for non-sellers. The seller still sees it. |
-
-### Endpoints
+| 2.1 | `POST /listings` by an authenticated `SELLER` → **201**, body = the created listing (`id`, `creationDate` set), `Location` header. The caller becomes the owner. |
+| 2.2 | `GET /listings` (public) → **200**, paginated (`?page=`, `?size=`, default size ≤ 20), shape of *Conventions*. Optional filters `category` and `maxPrice` (inclusive), combinable. |
+| 2.3 | `GET /listings/{id}` (public) → **200**, or **404** + JSON body if unknown. |
+| 2.4 | Invalid payload (title empty or > 120, description > 2000, price ≤ 0, missing category) → **422** + `fields`. |
+| 2.5 | `POST /listings` without credentials → **401**. |
+| 2.6 | The V1 response contains only `id`, `title`, `description`, `price`, `category`, `creationDate`. |
 
 | Method | Path | Auth | Success |
 |---|---|---|---|
-| POST | `/listings` | SELLER | 201 |
-| GET | `/listings` | Public | 200 |
-| GET | `/listings/{id}` | Public | 200 |
-| PUT | `/listings/{id}` | SELLER (seller) | 200 |
-| DELETE | `/listings/{id}` | SELLER (seller) | 204 |
+| POST | `/listings` | `SELLER` | 201 |
+| GET | `/listings` | public | 200 |
+| GET | `/listings/{id}` | public | 200 |
 
-### Hints
+### Verify
 
-- Pagination: bind Spring Data's `Pageable` in the controller (e.g.
-  `?page=0&size=10`), default size ≤ 20.
-- Filters: optional parameters `category` and `maxPrice` → derived repository
-  methods (e.g. `findByCategoryAndPriceLessThanEqual(...)`) or a `@Query`.
-- Sellership: in the service, before PUT/DELETE, compare
-  `listing.getSeller().getId()` with the current user id (see `/auth/me` for how
-  to get it) → throw `AccessDeniedException` (→ 403).
-- Not found / inactive-for-others: throw `ResourceNotFoundException` (→ 404).
-- The `Listing` entity needs an `seller` relation (`@ManyToOne` to `User`) -
-  the skeleton leaves it to you; referential integrity is carried by JPA
-  (you may optionally add a DB-level FK in a Liquibase changeSet - see README).
+- [ ] `$PSQL "select id from databasechangelog order by orderexecuted"` → contains your `v1.0.2` changeSet id after `v1.0.1-1`
+- [ ] `$PSQL "\d listing"` → the 7 V1 columns exist
+- [ ] `curl -i -u "$ALICE" -X POST $API/listings -H 'Content-Type: application/json' -d '{"title":"Bike","description":"City bike","price":120.00,"category":"SPORTS"}'` → **201**, `id` and `creationDate` in the body, no `active` field
+- [ ] Create two more as Alice: a `BOOKS` at `15.00` and a `SPORTS` at `900.00`
+- [ ] `curl -i $API/listings` (anonymous) → **200**, `content` has 3 items, `page.totalElements` = 3
+- [ ] `curl -s "$API/listings?category=SPORTS&maxPrice=200"` → only the bike
+- [ ] `curl -s "$API/listings?size=2&page=1"` → 1 item, `page.number` = 1
+- [ ] `curl -i $API/listings/1` → **200** · `curl -i $API/listings/9999` → **404** + JSON body
+- [ ] `curl -i -X POST $API/listings -H 'Content-Type: application/json' -d '{"title":"x","price":1,"category":"BOOKS"}'` → **401**
+- [ ] `curl -i -u "$ALICE" -X POST $API/listings -H 'Content-Type: application/json' -d '{"title":"","price":0}'` → **422** + `fields.title`, `fields.price`, `fields.category`
+- [ ] `$PSQL "select id, title, active, user_id from listing"` → `active = t`, `user_id` = Alice's id
 
-### Acceptance checklist
+### If you are stuck
 
-- [ ] POST → 201, body has `id`, `creationDate`; response is JSON
-- [ ] GET list is paginated (default size ≤ 20); `category` and `maxPrice` filters work
-- [ ] GET `/listings/{unknown}` → 404 + JSON body
-- [ ] PUT own → 200 · PUT other → 403 · DELETE own → 204 · DELETE other → 403
-- [ ] Anonymous POST/PUT/DELETE → 401
-- [ ] Invalid payload (title > 120, price ≤ 0, missing category) → 422 + `fields`
-- [ ] Seller toggles `active=false` → listing disappears from the list of anonymous/other users
-- [ ] `active=false` → `GET /{id}` is 404 for anonymous/other, still 200 for the seller
+- Liquibase `addColumn` example: README, *Schema migrations (Liquibase)*. Column types: `VARCHAR(120)`, `VARCHAR(2000)`, `NUMERIC(12,2)`, `VARCHAR(32)`, `TIMESTAMP`, `BOOLEAN`, `BIGINT`.
+- `ddl-auto` is `none`: if Hibernate complains about a missing column, the changelog is missing it.
+- `category` is an enum stored as text: `@Enumerated(EnumType.STRING)`.
+- Owner relation: `@ManyToOne(fetch = LAZY) @JoinColumn(name = "user_id")`. The current user: same technique as Step 1 `/auth/me`.
+- Optional filters: derived queries (`findByActiveTrueAndCategoryAndPriceLessThanEqual(..., Pageable)`) or one `@Query` with `(:category is null or l.category = :category)`. Spring Data JPA 4 docs, *Query Methods*.
+- Pagination: a `Pageable` controller parameter (`@PageableDefault(size = 20)`); return `new PagedModel<>(page)` (`org.springframework.data.web.PagedModel`).
+- Public GET: `requestMatchers(HttpMethod.GET, "/listings", "/listings/**").permitAll()` **before** `anyRequest()`.
+- DTO validation: `@NotBlank`, `@Size`, `@Positive`, `@NotNull` (jakarta.validation) + `@Valid` in the controller.
 
 ---
 
-## Step 3 - Security Rules `CORE`
+## Step 3 - Security rules: ownership and lifecycle   [CORE]
 
-> **User stories** —
->
-> - *As a **Seller**, I want **only my own listings** to be editable and
->   deletable by me so that **no one else can tamper with my offers**.*
-> - *As a **Visitor**, I want to keep being able to **browse freely**, so that
->   **browsing requires no account**, even though **writing requires one**.*
+**Outcome** — only a listing's owner can update, hide or delete it; a hidden
+listing disappears for everyone else, and the full security matrix holds.
 
-### Behavior
+### Build it
 
-| # | Requirement |
+1. **Modify** `config/SecurityConfig.java` — `POST`, `PUT`, `DELETE` on
+   `/listings/**` require the role `SELLER`; `/auth/register`, `/actuator/**`,
+   OpenAPI and Swagger UI stay public.
+2. **Modify** `ListingRequestDto` — accept an optional `active` boolean (write-only).
+3. **Implement** `update` and `delete` in `ListingServiceImpl` — load the listing
+   (404 if unknown), then compare its owner with the current user: not the owner
+   → throw `AccessDeniedException`.
+4. **Add** the `@ExceptionHandler(AccessDeniedException.class)` → **403** in
+   `GlobalExceptionHandler` (see the *Trap* in Conventions).
+5. **Modify** `findById` and the list use-case — a hidden listing (`active = false`)
+   is visible to its owner only: absent from lists, **404** on detail for others.
+6. **Modify** `ListingController` — `PUT /listings/{id}` (200 + body) and
+   `DELETE /listings/{id}` (204).
+7. **Rebuild** and run `Verify`.
+
+### Expected behavior
+
+| # | Rule |
 |---|---|
-| 3.1 | **Read** (`GET /listings*`) is **public** - no authentication required. |
-| 3.2 | **Write** (`POST/PUT/DELETE /listings*`) requires an authenticated user with role **SELLER** (HTTP Basic). |
-| 3.3 | **Sellership**: regardless of anything else, only the listing's seller may PUT or DELETE. Other authenticated SELLERs receive **403**. |
-| 3.4 | `/auth/register` and **all actuator endpoints** (`/actuator/health`, `/actuator/info`, `/actuator/metrics`) remain public. |
+| 3.1 | Reads (`GET /listings*`) are public. |
+| 3.2 | Writes (`POST/PUT/DELETE /listings*`) require an authenticated `SELLER` → otherwise **401**. |
+| 3.3 | `PUT` / `DELETE` by an authenticated user who is **not the owner** → **403** (never 401, never 404 — the listing exists). |
+| 3.4 | `PUT /listings/{id}` replaces the writable fields → **200** + body (an absent `active` leaves it unchanged); `DELETE` → **204**, then `GET` → **404**. |
+| 3.5 | `PUT` with `"active": false` hides the listing: absent from `GET /listings` and **404** on `GET /listings/{id}` for anonymous users and other `SELLER`s; the owner still gets it (list and detail). `"active": true` restores it. |
+| 3.6 | `/auth/register`, `/actuator/health`, `/actuator/info`, `/actuator/metrics` are public. |
 
-### Test matrix
+**Client x endpoint x status** (L = a listing owned by Alice):
 
-| Client | GET list | GET detail | POST | PUT own | PUT other | DELETE own | DELETE other |
-|---|---|---|---|---|---|---|---|
-| Anonymous | 200 | 200/404 | 401 | 401 | 401 | 401 | 401 |
-| SELLER (not seller) | 200 | 200/404 | 201 | 403 | 403 | 403 | 403 |
-| SELLER (seller) | 200 | 200 | 201 | 200 | - | 204 | - |
+| Client | GET list | GET L | POST | PUT L | DELETE L |
+|---|---|---|---|---|---|
+| Anonymous | 200 | 200 (404 if hidden) | 401 | 401 | 401 |
+| Bob (`SELLER`, not owner) | 200 | 200 (404 if hidden) | 201 | 403 | 403 |
+| Alice (`SELLER`, owner) | 200 | 200 (even hidden) | 201 | 200 | 204 |
 
-### Hints
+### Verify
 
-- In `SecurityConfig.requestMatchers(...)`: public `GET /listings**`,
-  authenticated + `hasRole("SELLER")` on `POST/PUT/DELETE /listings`, public
-  `/auth/register` and `/actuator/**`.
-- The **403** for non-sellers comes from your **service** layer (Step 2), which is
-  why an anonymous writer gets 401 (Security) while an authenticated non-seller
-  gets 403 (service).
+Use listing `1` (Alice's bike) and listing `2` (Alice's book) from Step 2.
 
-### Acceptance checklist
+- [ ] `curl -i -X PUT $API/listings/1 -H 'Content-Type: application/json' -d '{"title":"Bike","price":100,"category":"SPORTS"}'` → **401**
+- [ ] Same with `-u "$BOB"` → **403** + JSON body
+- [ ] Same with `-u "$ALICE"` → **200**, `"price":100.00`
+- [ ] `curl -i -u "$BOB" -X DELETE $API/listings/2` → **403**
+- [ ] `curl -i -u "$ALICE" -X PUT $API/listings/1 -H 'Content-Type: application/json' -d '{"title":"Bike","price":100,"category":"SPORTS","active":false}'` → **200**
+- [ ] `curl -s $API/listings` and `curl -s -u "$BOB" $API/listings` → listing 1 absent
+- [ ] `curl -i $API/listings/1` and `curl -i -u "$BOB" $API/listings/1` → **404**
+- [ ] `curl -s -u "$ALICE" $API/listings` → listing 1 present · `curl -i -u "$ALICE" $API/listings/1` → **200**
+- [ ] Same `PUT` with `"active":true` → listing 1 is back in `curl -s $API/listings` (keep it active for the next steps)
+- [ ] `curl -i -u "$ALICE" -X DELETE $API/listings/2` → **204** · then `curl -i $API/listings/2` → **404**
+- [ ] `curl -i $API/actuator/health`, `.../actuator/info`, `.../actuator/metrics` → **200** without credentials
+- [ ] Every cell of the matrix above has been observed at least once
 
-- [ ] Every row of the test matrix behaves exactly as above
-- [ ] `/actuator/health`, `/actuator/info`, `/actuator/metrics` reachable without credentials
-- [ ] POST without credentials → 401 (Basic challenge)
-- [ ] PUT on someone else's listing with valid credentials → 403 (not 401, not 404)
+### If you are stuck
+
+- Matchers: `requestMatchers(HttpMethod.POST, "/listings/**").hasRole("SELLER")` (same for PUT, DELETE). `hasRole("SELLER")` matches the authority `ROLE_SELLER` built by `SecurityConfig#userDetailsService`.
+- Who answers what: **401** comes from the security filter (no or bad credentials); **403** comes from **your service** (credentials OK, wrong owner). That is why the owner check is not in `SecurityConfig`.
+- Owner check: compare ids (`listing.getOwner().getId()` vs current user id), not entity instances.
+- Visibility: one condition, reused by list and detail — "active, **or** owned by the caller". Anonymous callers have no id.
+- Docs: Spring Security 7, *Authorize HttpServletRequests*.
 
 ---
 
-## Step 4 - Content Negotiation (JSON + XML) `BONUS`
+## Step 4 - Content negotiation (JSON + XML)   [BONUS]
 
-> **User story** — *As an **API consumer** (developer), I want the same
-> **endpoint to answer in the format I ask for** (JSON or XML), so that my
-> client — Java, .NET, mobile, … — **consumes the response natively** without
-> an adapter.*
+**Outcome** — the same endpoints read and write XML as well as JSON, chosen by
+`Content-Type` and `Accept`; errors stay JSON.
 
-> This step adds `application/xml` alongside `application/json`. It requires one
-> extra dependency - see **Appendix B** before starting.
+### Build it
 
-### Behavior
+1. **Add** the Jackson XML dependency (exact block: **README**, *Optional
+   dependency edits*; what/why: Appendix B).
+2. **Add** `@ExceptionHandler`s for `HttpMediaTypeNotSupportedException` (→ 415)
+   and `HttpMediaTypeNotAcceptableException` (→ 406) in `GlobalExceptionHandler`.
+3. **Force** every error response of `GlobalExceptionHandler` to
+   `application/json`, whatever the `Accept` header.
+4. **Rebuild** and run `Verify`.
 
-| # | Requirement |
+### Expected behavior
+
+| # | Rule |
 |---|---|
-| 4.1 | `GET` endpoints respond in `application/json` or `application/xml` based on the `Accept` header. |
-| 4.2 | `POST`/`PUT` endpoints accept `application/json` or `application/xml` based on the `Content-Type` header. |
-| 4.3 | The **same data** is serialized/deserialized in both formats (field names, structure, values identical). |
-| 4.4 | If the `Content-Type` is not supported (e.g. `application/yaml`) → **415 Unsupported Media Type**. |
-| 4.5 | If the `Accept` type is not supported (e.g. `application/csv`) → **406 Not Acceptable**. |
-| 4.6 | Error responses (4xx) are always returned as **JSON** regardless of `Accept`. |
+| 4.1 | `GET` endpoints answer `application/json` or `application/xml` according to `Accept` (default JSON). |
+| 4.2 | `POST` / `PUT` accept `application/json` or `application/xml` according to `Content-Type`. |
+| 4.3 | Same field names, structure and values in both formats. |
+| 4.4 | Unsupported `Content-Type` (e.g. `application/octet-stream`) → **415**. |
+| 4.5 | Unsupported `Accept` (e.g. `text/csv`) → **406**. |
+| 4.6 | Every 4xx body is JSON, even when XML was requested. |
 
-### Test scenarios
+### Verify
 
-| Request | Expected |
-|---|---|
-| `POST /listings` with `Content-Type: application/json` | 201, JSON body |
-| `POST /listings` with `Content-Type: application/xml` | 201, XML body |
-| `GET /listings/{id}` with `Accept: application/xml` | 200, XML body |
-| `GET /listings/{id}` with `Accept: application/json` | 200, JSON body |
-| `POST /listings` with `Content-Type: application/octet-stream` | 415 |
-| `GET /listings/{id}` with `Accept: text/csv` | 406 |
+- [ ] `curl -i -u "$ALICE" -X POST $API/listings -H 'Content-Type: application/xml' -H 'Accept: application/xml' -d '<listing><title>Lamp</title><price>25.00</price><category>HOUSEHOLD</category></listing>'` → **201**, `Content-Type: application/xml`
+- [ ] `curl -i -H 'Accept: application/xml' $API/listings/1` → **200** XML · same with `Accept: application/json` → **200** JSON, identical values
+- [ ] `curl -i -u "$ALICE" -X POST $API/listings -H 'Content-Type: application/octet-stream' -d 'x'` → **415**, JSON body
+- [ ] `curl -i -H 'Accept: text/csv' $API/listings/1` → **406**, JSON body
+- [ ] `curl -i -H 'Accept: application/xml' $API/listings/9999` → **404**, `Content-Type: application/json`
 
-### Hints
+### If you are stuck
 
-- Add the dependency from Appendix B - once on the classpath, Spring Boot
-  registers the XML message converter automatically; your DTOs stay unchanged.
-- 4.4/4.5 are raised by the framework by default; just add the two `@ExceptionHandler`
-  entries from the "Error handling" table so they get the standard JSON body.
-
-### Acceptance checklist
-
-- [ ] POST JSON → 201 JSON; POST XML → 201 XML (identical data)
-- [ ] GET with `Accept: application/xml` → 200 XML; with `Accept: application/json` → 200 JSON
-- [ ] POST with `Content-Type: application/octet-stream` → 415 JSON body
-- [ ] GET with `Accept: text/csv` → 406 JSON body
-- [ ] All error bodies stay JSON even when XML was requested
+- Once `jackson-dataformat-xml` is on the classpath, Boot registers the XML converter: the DTOs do not change.
+- Forcing JSON on errors: `ResponseEntity.status(...).contentType(MediaType.APPLICATION_JSON).body(...)`.
+- 406 on the error itself: if the response cannot be written as JSON because of `Accept: text/csv`, check that the handler sets the content type explicitly.
+- Docs: Spring Boot 4.1.1, *Servlet Web Applications — HttpMessageConverters*.
 
 ---
 
-## Step 5 - Schema Evolution (V2 fields in the database) `CORE`
+## Step 5 - Schema evolution (V2 columns)   [CORE]
 
-> **User story** — As the **team of developers**, we want to add new columns
-> to the database **without touching or breaking** the existing tables and
-> data, so that the **next features** (negotiable flag, geo fields, distance
-> search, …) can be built progressively on top of the same dataset.
+**Outcome** — the database gains the V2 columns through one additive migration;
+the V1 API is unchanged and existing rows are untouched.
 
-### Behavior
+### Build it
 
-The database schema is **extended** with new columns. This step is purely
-structural - the V1 API behavior does not change yet.
+1. **Create** `src/main/resources/db/changelog/v1.1-v2-fields.yaml` — one
+   changeSet that **adds** 7 nullable columns to `listing`: `negotiable` (BOOLEAN),
+   `street_address`, `city`, `postal_code`, `country` (VARCHAR), `latitude`,
+   `longitude` (DOUBLE PRECISION). `addColumn` only.
+2. **Modify** `db.changelog-master.yaml` — include it last (the commented line is already there).
+3. **Modify** `domain/entity/Listing.java` — map the 7 attributes (no DTO change yet).
+4. **Rebuild** and run `Verify`.
 
-| Migration | Added columns |
+### Expected behavior
+
+| # | Rule |
 |---|---|
-| v1.1 | `negotiable` (boolean) + `street_address`, `city`, `postal_code`, `country`, `latitude` (double), `longitude` (double) |
+| 5.1 | The migration is **additive**: no existing column is modified or dropped; no published changelog is edited. |
+| 5.2 | The new columns are **nullable**; rows created before the migration keep `null`. |
+| 5.3 | The Step 2-3 behavior is unchanged (V1 responses do not show the new fields). |
+| 5.4 | `mvn clean verify` stays green. |
 
-### Requirements
+### Verify
 
-| # | Requirement |
-|---|---|
-| 5.1 | Migrations are **additive** (ADD COLUMN). No existing column is modified or dropped. |
-| 5.2 | All existing tests from Steps 1-3 remain **green** after migration. |
-| 5.3 | The new columns are **nullable** (existing rows have no value). |
-| 5.4 | `mvn clean verify` passes with migration applied. |
+- [ ] `$PSQL "select id, filename from databasechangelog order by orderexecuted"` → `v1.0-1`, `v1.0-2`, `v1.0.1-1`, your `v1.0.2` changeSet(s), then your `v1.1` changeSet — no row disappeared
+- [ ] `$PSQL "\d listing"` → the 7 new columns, all nullable
+- [ ] `$PSQL "select id, negotiable, city, latitude from listing"` → listings created in Step 2 have `null` in the new columns
+- [ ] `curl -s $API/listings/1` → same fields as before (no `negotiable`, no address)
+- [ ] `docker compose logs listings-api | grep -i "liquibase"` → no checksum error (`ValidationFailedException`)
 
-### Hints
+### If you are stuck
 
-- One new changelog file next to `v1.0-init.yaml`: `v1.1-v2-fields.yaml` with all 7 columns (`negotiable` + the 6 geo columns); use `addColumn` only.
-- Add that `include` to `db.changelog-master.yaml`.
-- Map the new attributes on the `Listing` entity - `ddl-auto` is `none`, so only
-  Liquibase creates the columns; Hibernate only maps them.
-- Verify: the `DATABASECHANGELOG` table must list v1.0 and v1.1 changeSets.
-- Never edit an already published changelog; a need for a new column → a new
-  changeSet.
-
-### Acceptance checklist
-
-- [ ] App starts with v1.0 + v1.1 applied (2 rows in `DATABASECHANGELOG`)
-- [ ] `mvn clean verify` green
-- [ ] Steps 1-3 tests still pass
-- [ ] A listing created before v1.1 reads `negotiable`/geo as `null`
+- Reuse the `addColumn` example of the README, *Schema migrations (Liquibase)*.
+- Checksum error at startup = an already-applied changeSet was edited. Revert that edit; add a new changeSet instead.
+- Java field names are camelCase, columns snake_case: `@Column(name = "street_address")`.
+- Docs: Liquibase, *addColumn* change type.
 
 ---
 
-## Step 6 - Versioning (V1 + V2) `CORE`
+## Step 6a - Versioning: routing, default, deprecation   [CORE]
 
-> **User stories** —
->
- > - *As an **API consumer**, I want to **explicitly select V1 or V2** via the
- >   `?version=` query parameter, and the API to **return the matching fields**
- >   (public vs. owner-only) so that **my code can rely on a stable contract
- >   while the platform evolves**.*
-> - *As a **platform admin**, I want to **deprecate V1 with clear headers**
->   (`Deprecation`, `Sunset`) so that **existing clients have a deadline to
->   migrate**.*
+**Outcome** — `/listings` is served in two versions selected by `?version=`, V1 by
+default, unknown versions are refused with **400**, and V1 announces its sunset.
 
-### V2 data contract
+> In this step V2 returns the **same fields as V1** plus `negotiable`. The
+> owner-only fields come in Step 6b.
 
-V2 extends V1 with additional fields:
+### Build it
 
-| Field | V1 | V2 | Visibility |
-|---|:---:|:---:|---|
-| Public fields (title, description, price, category, creationDate) | ✓ | ✓ | Always |
-| `negotiable` | - | ✓ | Public |
-| `active` | managed in V1 | ✓ | **Seller only** |
-| `streetAddress`, `city`, `postalCode`, `country` | - | ✓ | **Seller only** |
-| `latitude`, `longitude` | - | ✓ | **Seller only** |
+1. **Modify** `config/ApiVersioningConfig.java` — override
+   `configureApiVersioning(ApiVersionConfigurer)`: resolve the version from the
+   query parameter `version`, supported versions `V1` and `V2`, default `V1`.
+2. **Split** `ListingController` into `ListingControllerV1` and
+   `ListingControllerV2` (same `/listings` path, `version = "V1"` / `"V2"` on the
+   mappings). Both delegate to the same `ListingService`.
+3. **Create** the V2 response DTO (`ListingV2ResponseDto`: V1 fields + `negotiable`)
+   and **accept** `negotiable` in the V2 request DTO.
+4. **Add** an `@ExceptionHandler` for the framework's
+   `InvalidApiVersionException` → **400** with the body of rule 6.3.
+5. **Add** the `Deprecation` and `Sunset` headers on every V1 response, and only V1.
+6. **Rebuild** and run `Verify`.
 
-### Versioning behavior
+### Expected behavior
 
-| # | Requirement |
+| # | Rule |
 |---|---|
-| 6.1 | The client selects the API version via the **query parameter** `?version=V1` or `?version=V2` (lower-case values are also accepted). |
-| 6.2 | **Default**: if no `version` parameter is provided, the API responds with **V1**. |
-| 6.3 | **Invalid version** (e.g. `V99`) → **400** with body: `{ "error": "API version not available", "availableVersions": ["V1", "V2"] }` |
-| 6.4 | **V1 responses** must include the headers: `Deprecation: true` and `Sunset: Sun, 01 Jan 2027 00:00:00 GMT`. |
-| 6.5 | **V2 responses** must NOT include deprecation headers. |
-| 6.6 | **V1** never returns `negotiable` or the private fields (active, address, geo) - regardless of authentication. |
-| 6.7 | **V2 non-seller**: returns `negotiable` but **never** `active`, `streetAddress`, `city`, `postalCode`, `country`, `latitude`, `longitude`. |
-| 6.8 | **V2 seller**: returns ALL fields including private ones. |
-| 6.9 | All business rules from Steps 2-3 (pagination, sellership, 404 on inactive) apply identically in both versions. |
+| 6.1 | `?version=V1` or `?version=V2` selects the version (`v1` / `v2` also accepted). |
+| 6.2 | No `version` parameter → **V1**. |
+| 6.3 | Unknown version (e.g. `V99`) → **400**, body contains `"error": "API version not available"` and `"availableVersions": ["V1", "V2"]` (+ the usual `timestamp`, `status`, `message`). |
+| 6.4 | V1 responses carry `Deprecation` (value `true`, or the RFC 9745 date form `@<epoch>`) and `Sunset: Sun, 01 Jan 2027 00:00:00 GMT`. |
+| 6.5 | V2 responses carry neither header. |
+| 6.6 | V1 never returns `negotiable`, `active`, address or geo fields. V2 returns `negotiable`. |
+| 6.7 | Pagination, filters, ownership (403) and hidden listings (404) behave identically in V1 and V2. |
 
-### OpenAPI
+### Verify
 
-| # | Requirement |
-|---|---|
-| 6.10 | Two **separate** OpenAPI specs are published: one for V1, one for V2, with distinct titles. |
+- [ ] `curl -i $API/listings/1` → **200**, `Deprecation:` and `Sunset: Sun, 01 Jan 2027 00:00:00 GMT` headers, no `negotiable`
+- [ ] `curl -s "$API/listings/1?version=V1"` → same body as without parameter
+- [ ] `curl -i -u "$ALICE" -X PUT "$API/listings/1?version=V2" -H 'Content-Type: application/json' -d '{"title":"Bike","price":100,"category":"SPORTS","active":true,"negotiable":true}'` → **200**, `"negotiable":true`, no `Deprecation` / `Sunset` headers
+- [ ] `curl -i "$API/listings/1?version=V2"` → **200**, `"negotiable":true`, no `Deprecation` / `Sunset` headers
+- [ ] `curl -s "$API/listings/1"` → no `negotiable` (V1)
+- [ ] `curl -i "$API/listings/1?version=v2"` → **200** V2
+- [ ] `curl -i "$API/listings?version=V99"` → **400**, `"availableVersions":["V1","V2"]`
+- [ ] `curl -i -u "$BOB" -X PUT "$API/listings/1?version=V2" -H 'Content-Type: application/json' -d '{"title":"x","price":1,"category":"SPORTS"}'` → **403**
+- [ ] `curl -s "$API/listings?version=V2&category=SPORTS&size=1"` → paginated like V1
 
-### Hints
+### If you are stuck
 
-- Native Spring versioning: register the **query condition** `version` for
-  versions `V1`/`V2` in `ApiVersioningConfig` (via
-  `RequestMappingHandlerMapping.versioningStrategy`) - then declare
-  `@RequestMapping(value = "/listings", version = "V1")` (and `"V2"`) on the
-  controllers.
-- The fallback (6.2) is **not** given for free by native versioning: an
-  unspecified version must be routed to V1, and an unknown one to 400. Think
-  about where you can inspect the query param before dispatch (a filter or a
-  `HandlerInterceptor` / `RequestMappingHandlerMapping#registerDefaultVersioningStrategy`).
-- 6.4/6.5: add the `Deprecation` / `Sunset` headers to V1 responses only (e.g. in
-  the controller or in the same filter/interceptor).
-- 6.6-6.8: `application.yml` already sets Jackson to `non_null` inclusion - if the
-  private fields are `null` in the response object, they are omitted from the
-  JSON/XML payload. Use that: build the V2 response without private fields for
-  non-sellers.
-- 6.10: publish two `GroupedOpenApi` beans (springdoc), one per version, each with
-  its own title.
-
-### Acceptance checklist
-
-- [ ] GET `/listings` (no `version` param) → V1 payload
-- [ ] `?version=V2` → V2 payload · `?version=V1` → identical to no-param (equivalence)
-- [ ] `?version=V99` → 400 + `{ "error": "API version not available", "availableVersions": ["V1", "V2"] }`
-- [ ] V1 responses carry `Deprecation: true` and `Sunset: Sun, 01 Jan 2027 00:00:00 GMT`; V2 responses carry neither
-- [ ] V1 payload never contains `negotiable`, `active`, address or geo fields (for any client)
-- [ ] V2 non-seller: `negotiable` present, all private fields absent · V2 seller: all present
-- [ ] Pagination, sellership, and `active=false` → 404 rules behave identically in V1 and V2
-- [ ] Two OpenAPI documents (V1, V2) with distinct titles
+- `ApiVersionConfigurer`: `useQueryParam("version")`, `addSupportedVersions(...)`, `setDefaultVersion(...)`. Spring Framework 7 reference, *Web MVC — API Versioning*.
+- Mapping side: `@GetMapping(version = "V1")` or `@RequestMapping(path = "/listings", version = "V1")` at class level.
+- `V1` vs `1`: the default parser is semantic (`major.minor.patch`). If it rejects the `V` prefix or the lower case, give the configurer your own `ApiVersionParser` (`setVersionParser`) that normalises the value (upper-case, strip the `V`).
+- With supported versions declared, an unknown version raises `org.springframework.web.accept.InvalidApiVersionException` before any controller runs. Map it in `GlobalExceptionHandler` like the other exceptions — do not create your own class with the same name.
+- Headers: `ApiVersionConfigurer#setDeprecationHandler` with a `StandardApiVersionDeprecationHandler` (configure V1 with a deprecation date and the sunset date), or add the two headers yourself in `ListingControllerV1` (`ResponseEntity.ok().header(...)`).
+- The `listings.api.*` keys in `application.yml` already hold `V1` / `V1,V2`.
 
 ---
 
-## Step 7 - Geolocation (GPS enrichment) `BONUS`
+## Step 6b - V2 contract: visibility and OpenAPI   [CORE]
 
-> **User stories** —
->
-> - *As a **Seller**, I want to provide just an address and have **lat/lng
->   resolved automatically** so that **buyers can find me on a map** without
->   knowing coordinates.*
-> - *As a **Visitor / buyer**, I want listings to be **geolocated when the
->   seller gave an address**, so that I can **search by distance later**
->   (Step 9).*
+**Outcome** — V2 shows the owner-only fields to the owner alone, and the API
+publishes one OpenAPI document per version.
 
-### Behavior
+### Build it
 
-| # | Requirement |
+1. **Modify** `ListingV2ResponseDto` — add `active`, `streetAddress`, `city`,
+   `postalCode`, `country`, `latitude`, `longitude`.
+2. **Modify** the V2 request DTO — accept the address fields (`latitude` /
+   `longitude` are not writable: Step 7 computes them).
+3. **Modify** `ListingControllerV2` (or a mapper) — fill the owner-only fields
+   **only** when the caller is the owner; leave them `null` otherwise.
+4. **Create** an OpenAPI configuration class in `config/` — two `GroupedOpenApi`
+   beans (`v1`, `v2`), each with its own title.
+5. **Rebuild** and run `Verify`.
+
+### Expected behavior
+
+| # | Rule |
 |---|---|
-| 7.1 | When a listing is **updated** (V2) with a `streetAddress` plus `city`/`country` if available, the API attempts to resolve `latitude` and `longitude` from a **free public geocoding service** (Nominatim - see Appendix A). |
-| 7.2 | If the geocoding call **succeeds**, the resolved coordinates are persisted and returned in the response. |
-| 7.3 | If the geocoding call **fails** (network error, timeout, no result): the listing is **still updated successfully** (200) with `latitude`/`longitude` left as `null`. A WARN is logged with the reason. |
-| 7.4 | The geocoding call must NOT block the request for more than **3 seconds** (timeout). |
-| 7.5 | The geocoding call is only made when `streetAddress` is non-empty. If absent, no call is made and coordinates remain null. |
-| 7.6 | **Bonus**: implement a remediation mechanism (retry with backoff, a re-sync endpoint, or a pending-geocoding queue) so failed enrichments can be retried without user intervention. |
+| 6.8 | **V2, not the owner** (anonymous or other `SELLER`): public fields + `negotiable`; never `active`, `streetAddress`, `city`, `postalCode`, `country`, `latitude`, `longitude`. |
+| 6.9 | **V2, owner**: all fields, including the owner-only ones. |
+| 6.10 | **V1**: unchanged — never the V2 fields, for any caller. |
+| 6.11 | Two OpenAPI documents, one per version, with distinct titles. |
 
-### Hints
+| Field | V1 (all) | V2 not owner | V2 owner |
+|---|:--:|:--:|:--:|
+| public fields | yes | yes | yes |
+| `negotiable` | no | yes | yes |
+| `active`, address, `latitude`, `longitude` | no | no | yes |
 
-- Use Boot's native `RestClient` (no webclient needed):
-  `RestClient.builder().baseUrl(endpoint).requestFactory(factory).build()`,
-  where `factory` is a request factory configured with a 3-second
-  connect/read timeout.
-- Call `GET /search?format=json&limit=1&q={address}` - the response is a JSON
-  **array** of objects whose `lat`/`lon` values are **strings** to parse.
-- Put the client behind a small interface (a "port") that the listing service
-  depends on - that is what you will **mock** in tests.
-- Failure path: catch the exception, log at WARN (address + reason), leave the
-  coordinates `null`, continue → 200.
-- The `listings.geo.*` block in `application.yml` already exists for the endpoint /
-  timeout configuration.
-- Real Nominatim is limited to ~1 request/s (Appendix A). Tests must mock the port.
+### Verify
 
-### Test scenarios
+- [ ] `curl -i -u "$ALICE" -X PUT "$API/listings/1?version=V2" -H 'Content-Type: application/json' -d '{"title":"Bike","price":100,"category":"SPORTS","negotiable":true,"streetAddress":"10 rue de Rivoli","city":"Paris","postalCode":"75004","country":"France"}'` → **200**, address fields present
+- [ ] `curl -s -u "$ALICE" "$API/listings/1?version=V2"` → `active`, `streetAddress`, `city`, `postalCode`, `country` present
+- [ ] `curl -s "$API/listings/1?version=V2"` and `curl -s -u "$BOB" "$API/listings/1?version=V2"` → `negotiable` present; no `active`, no address, no `latitude` / `longitude`
+- [ ] `curl -s -u "$ALICE" "$API/listings/1?version=V1"` → none of the V2 fields
+- [ ] `curl -s -u "$ALICE" "$API/listings?version=V2"` → owner fields on Alice's items only (create one as Bob to compare)
+- [ ] `curl -s $API/v3/api-docs/v1 | grep -o '"title":"[^"]*"'` and same for `v2` → two different titles
+- [ ] Swagger UI (`$API/swagger-ui/index.html`) offers a V1 / V2 selector
 
-| Scenario | Expected |
-|---|---|
-| Update with valid `streetAddress` (mock → valid result) | 200, `latitude`/`longitude` populated |
-| Update with valid `streetAddress` (mock → 500) | 200, `latitude`/`longitude` null, WARN in log |
-| Update with valid `streetAddress` (mock → empty result) | 200, `latitude`/`longitude` null |
-| Update without `streetAddress` | 200, no geocoding call made (assert on the mock), coordinates null |
+### If you are stuck
 
-### Acceptance checklist
-
-- [ ] The four scenarios above behave exactly as expected (mock-based, no real network)
-- [ ] A slow mock (e.g. 5 s) is aborted and treated as a failure (timeout ≤ 3 s)
-- [ ] WARN log lines include the addressed street and the failure reason
+- `application.yml` sets Jackson to `non_null`: a field left `null` is not serialized. Leaving owner-only fields `null` for non-owners is enough.
+- The owner test is the same as in Step 3 (ids compared); anonymous callers are never owners.
+- `GroupedOpenApi.builder().group("v1").addOpenApiCustomizer(api -> api.info(new Info().title(...)))`; restrict each group to its handlers (`addOperationCustomizer`, or `pathsToMatch` + the version). springdoc 3 docs, *Groups*.
 
 ---
 
-## Step 8 - Metrics `CORE`
+## Step 7 - Geolocation (GPS enrichment)   [BONUS]
 
-> **User story** — *As a **developer / ops**, I want the service to expose a
-> **counter for successful creations**, so that I can **monitor and prove** the
-> service is working.*
+**Outcome** — when an owner gives an address in V2, the API resolves `latitude`
+and `longitude` through Nominatim; a geocoder failure never fails the request.
 
-### Custom metrics
+### Build it
 
-| Metric | Type | Trigger |
-|---|---|---|
-| `listings.created` | Counter | Increment on every successful listing creation (201) |
+1. **Create** a port `application/service/GeocodingPort.java` (address in,
+   optional coordinates out) and an adapter `NominatimGeocodingClient` using
+   `RestClient`, configured from `listings.geo.*` (`application.yml`).
+2. **Configure** the adapter with a 3-second connect + read timeout and a
+   `User-Agent` header (Nominatim usage policy, Appendix A).
+3. **Call** the port from `ListingServiceImpl` on V2 **create** and **update**,
+   only when `streetAddress` is non-blank.
+4. **Handle** every failure (network, timeout, non-2xx, empty array, bad number):
+   log one WARN line with the address and the reason, keep the coordinates `null`,
+   continue.
+5. **Rebuild** and run `Verify`.
 
-### Requirements
+### Expected behavior
 
-| # | Requirement |
+| # | Rule |
 |---|---|
-| 8.1 | `listings.created` is incremented on every successful creation (201). |
-| 8.2 | The application name is tagged in all metrics (already configured in `application.yml`). |
+| 7.1 | V2 create / update with a non-blank `streetAddress` → one geocoding call (`street, postalCode city, country`). |
+| 7.2 | Success → coordinates persisted and returned to the owner. |
+| 7.3 | Failure (network, timeout, no result) → the request still succeeds (**201** / **200**), coordinates `null`, one WARN log line with the address and the reason. |
+| 7.4 | The geocoding call never blocks the request for more than **3 s**. |
+| 7.5 | No `streetAddress` → no call, coordinates `null`. |
 
-### Hints
+### Verify
 
-- Inject `io.micrometer.core.instrument.MeterRegistry`; use
-  `meterRegistry.counter("listings.created").increment()` in the create use-case
-  (after the 201 path succeeds).
-- `management.metrics.tags.application` is already set - every metric you
-  register gets the `application="listings"` tag.
-- Check from the browser: `GET /actuator/metrics/listings.created`.
+- [ ] The Step 6b `PUT` (10 rue de Rivoli, Paris) → `latitude` ≈ 48.85, `longitude` ≈ 2.35 in the owner's V2 response
+- [ ] `$PSQL "select id, latitude, longitude from listing where id = 1"` → values persisted
+- [ ] Failure path: add `LISTINGS_GEO_ENDPOINT: "http://10.255.255.1"` (non-routable) to `listings-api` in `docker-compose.yml`, `docker compose up -d`, then `curl -s -o /dev/null -w '%{http_code} %{time_total}\n' -u "$ALICE" -X PUT "$API/listings/1?version=V2" -H 'Content-Type: application/json' -d '{"title":"Bike","price":100,"category":"SPORTS","streetAddress":"1 rue X","city":"Paris"}'` → `200`, time ≤ ~3.5 s
+- [ ] `docker compose logs listings-api | grep WARN` → one line with `1 rue X` and the reason (timeout)
+- [ ] V2 PUT without `streetAddress` → `200`, no new WARN, no new geocoding log line
+- [ ] Remove the `LISTINGS_GEO_ENDPOINT` override afterwards
 
-### Acceptance checklist
+**Optional extension** — a remediation path for failed enrichments (retry with
+backoff, `POST /listings/{id}/geocode` re-sync, or a pending queue). Document the choice in your README.
 
-- [ ] `GET /actuator/metrics/listings.created` exists and increments after a successful creation
-- [ ] The metric carries the tag `application="listings"`
+### If you are stuck
+
+- `RestClient.builder().baseUrl(...).requestFactory(factory).defaultHeader("User-Agent", ...)`; timeouts on `SimpleClientHttpRequestFactory` (`setConnectTimeout`, `setReadTimeout`) or `ClientHttpRequestFactorySettings`. Spring Framework 7 reference, *REST Clients*.
+- Call `/search?format=json&limit=1&q={q}` with `uri(builder -> ...)` so that `q` is encoded. The response is a JSON **array**; `lat` / `lon` are **strings**.
+- `@ConfigurationProperties(prefix = "listings.geo")` binds `endpoint` and `timeout-ms`; the env var `LISTINGS_GEO_ENDPOINT` overrides `listings.geo.endpoint`.
+- One `try/catch (RestClientException | NumberFormatException e)` around the call → `log.warn(...)`.
 
 ---
 
-## Step 9 - Distance Search `BONUS`
+## Step 8 - Metrics   [CORE]
 
-> **User story** — *As a **Visitor / buyer**, I want to **search listings by
-> my current lat/lng + a radius in km**, so that I can **choose the closest
-> one** without scrolling through the whole catalogue.*
+**Outcome** — the service exposes a counter of successful listing creations,
+tagged with the application name.
 
-### Behavior
+### Build it
 
-| # | Requirement |
+1. **Inject** `MeterRegistry` in `ListingServiceImpl`.
+2. **Increment** the counter `listings.created` once per successful creation
+   (after the listing is saved, whatever the API version).
+3. **Rebuild** and run `Verify`.
+
+### Expected behavior
+
+| # | Rule |
 |---|---|
-| 9.1 | **V2 only**: `GET /listings?lat={lat}&lng={lng}&radius={km}` returns listings whose coordinates fall within the specified radius (in **kilometers**). |
-| 9.2 | Listings without coordinates are **excluded** from results. |
-| 9.3 | Parameters `lat`, `lng`, `radius` are **all required** together. If any is missing → **400**. |
-| 9.4 | `radius` must be a positive integer (km). `radius < 1` → **400**. |
-| 9.5 | `lat` must be in [-90, 90], `lng` in [-180, 180]. Out of range → **400**. |
-| 9.6 | Calling this on **V1** → **400** (feature unavailable in this version). |
-| 9.7 | Visibility rules (`active=false`, seller-only private fields) apply as in Step 6. |
-| 9.8 | **(Optional)** Results sorted by distance, closest first. |
-| 9.9 | **(Bonus)** Justify your implementation approach (in-memory filtering, SQL-level, bounding box + precision, etc.) in the README. |
+| 8.1 | `listings.created` (counter) increases by 1 on every **201** of `POST /listings`; a 401 / 422 does not increment it. |
+| 8.2 | The metric carries the tag `application=listings` (already configured in `application.yml`). |
+
+### Verify
+
+- [ ] `curl -s $API/actuator/metrics/listings.created` → note `measurements[0].value` (N)
+- [ ] Create one listing (`POST`, **201**) → value is N + 1
+- [ ] Send an invalid `POST` (**422**) → value stays N + 1
+- [ ] Same JSON → `availableTags` contains `{"tag":"application","values":["listings"]}`
+- [ ] `grep -rn '"listings.created"' src/main/java` → exactly one place registers the counter
+
+### If you are stuck
+
+- `meterRegistry.counter("listings.created").increment()`; or build the `Counter` once in the constructor.
+- The metric only appears in `/actuator/metrics` after its first registration (first creation, or eager registration in the constructor).
+- Docs: Spring Boot 4.1.1, *Actuator — Metrics — Registering Custom Metrics*.
 
 ---
 
-## Step 10 - Final Integration
+## Step 9 - Distance search   [BONUS]
 
-> **User story** — *As the **team of developers** (and the class evaluating
-> us), we want to **ship a runnable, tested, documented micro-service**, so
-> that **anyone can reproduce, inspect, and trust** the work in 10 minutes.*
+**Outcome** — in V2, a visitor finds the listings within a radius (km) around a
+point, closest first.
 
-### Requirements
+### Build it
 
-| # | Requirement |
+1. **Modify** `ListingControllerV2` — accept the optional `lat`, `lng`, `radius`
+   query parameters on `GET /listings`.
+2. **Validate** them (all three or none, ranges) → **400** via a dedicated
+   exception and `@ExceptionHandler`.
+3. **Implement** the search (in memory, SQL, or bounding box + exact distance —
+   your choice), applying the Step 3 visibility and the Step 6b field rules.
+4. **Make** V1 reject these parameters → **400**.
+5. **Document** your approach and its limits in your README.
+6. **Rebuild** and run `Verify`.
+
+### Expected behavior
+
+| # | Rule |
 |---|---|
-| 10.1 | `mvn clean verify` is **green** - all tests pass, including the cumulative Liquibase migrations. |
-| 10.2 | The README documents: how to run, all endpoints with examples (JSON + XML if Step 4 done), versioning usage, GPS fallback behavior (if Step 7 done), metrics, and your justified technical choices. |
-| 10.3 | Testing is **optional**: a starter test is provided and enough to get `mvn clean verify` green. If you wrote your own tests, they must all pass; a good target (not a floor) is ~20 across unit + integration. |
-| 10.4 | No `TODO` comments and no `Not implemented yet` stubs remain in production code. |
-| 10.5 | Oral presentation: 10 minutes (architecture, key decisions, demo) + 5 minutes Q&A. |
+| 9.1 | `GET /listings?version=V2&lat=&lng=&radius=` returns the listings whose coordinates are within `radius` km. |
+| 9.2 | Listings without coordinates are excluded. |
+| 9.3 | `lat`, `lng`, `radius` are required together → otherwise **400**. |
+| 9.4 | `radius` is an integer ≥ 1 → otherwise **400**. |
+| 9.5 | `lat` in [-90, 90], `lng` in [-180, 180] → otherwise **400**. |
+| 9.6 | Same parameters on V1 → **400**. |
+| 9.7 | Visibility (hidden listings, owner-only fields) as in Steps 3 and 6b. |
+| 9.8 | *(optional)* Sorted by distance, closest first. |
+
+### Verify
+
+- [ ] With listing 1 geocoded in Paris: `curl -s "$API/listings?version=V2&lat=48.8566&lng=2.3522&radius=5"` → contains listing 1
+- [ ] `curl -s "$API/listings?version=V2&lat=45.76&lng=4.83&radius=5"` (Lyon) → does not contain listing 1
+- [ ] `curl -i "$API/listings?version=V2&lat=48.8&lng=2.3"` → **400**
+- [ ] `curl -i "$API/listings?version=V2&lat=48.8&lng=2.3&radius=0"` → **400**
+- [ ] `curl -i "$API/listings?version=V2&lat=91&lng=2.3&radius=5"` → **400**
+- [ ] `curl -i "$API/listings?lat=48.8&lng=2.3&radius=5"` (V1) → **400**
+- [ ] Your README has a short section justifying the approach
+
+### If you are stuck
+
+- Haversine distance: `2 R asin(sqrt(sin^2(dLat/2) + cos(lat1) cos(lat2) sin^2(dLng/2)))`, `R = 6371` km.
+- A bounding box (`latitude between ... and ...`) in SQL reduces the candidates; the exact distance filters the rest.
+- `@RequestParam(required = false) Double lat` lets you detect "some but not all" parameters yourself.
 
 ---
 
-## Deliverables
+## Step 10 - Final checks   [DELIVERY]
+
+**Outcome** — anyone can clone the repository, start it, and check the core in
+10 minutes.
+
+### Build it
+
+1. **Complete** your team's `README.md`: how to run, every endpoint with one
+   example (`curl`), versioning usage, metrics, the bonus steps you did, your
+   technical choices.
+2. **Remove** every `TODO` and `Not implemented yet` from `src/main`.
+3. **Run** the `Final checks` on a fresh stack.
+
+### Expected behavior
+
+| # | Rule |
+|---|---|
+| 10.1 | `mvn clean verify` is green (the provided smoke test, plus your own tests if you wrote any — they must pass). |
+| 10.2 | The stack starts from scratch (`docker compose down -v && docker compose up -d --build`) and applies all migrations. |
+| 10.3 | The README is enough to reproduce the core `Verify` lists. |
+| 10.4 | Oral: 10 minutes (architecture, key decisions, demo) + 5 minutes Q&A. |
+
+### Final checks
+
+- [ ] `docker compose down -v && docker compose up -d --build` → `curl -fsS $API/actuator/health` → `UP`
+- [ ] `mvn clean verify` → `BUILD SUCCESS`
+- [ ] `grep -rn "TODO\|Not implemented yet" src/main` → no output
+- [ ] Steps 1, 2, 3, 5, 6a, 6b, 8: every `Verify` box re-ticked on the fresh stack
+- [ ] README: run instructions, endpoint examples, versioning, metrics, choices
+
+### Deliverables
 
 | Item | Detail |
 |---|---|
 | Git repository (pair) | Clean history, meaningful commits |
-| `mvn clean verify` | Green, all tests passing |
-| README.md | Complete (run instructions, endpoint examples, decisions) |
-| Oral | 10 min presentation + Q&A |
+| `mvn clean verify` | Green |
+| `README.md` | Run instructions, endpoint examples, decisions |
+| Oral | 10 min presentation + 5 min Q&A |
 
 ---
 
@@ -692,10 +777,10 @@ V2 extends V1 with additional fields:
 
 Free public geocoder (OpenStreetMap). Reference for Step 7.
 
-- Base URL: `https://nominatim.openstreetmap.org`
-- Endpoint: `GET /search?format=json&limit=1&q={address}`
-  (`q` is URL-encoded; combine street + city for better results).
-- Response (array - note `lat`/`lon` are **strings**):
+- Base URL: `https://nominatim.openstreetmap.org` (`listings.geo.endpoint`).
+- Endpoint: `GET /search?format=json&limit=1&q={address}` (`q` URL-encoded;
+  street + postal code + city + country gives the best results).
+- Response (array — `lat` / `lon` are **strings**):
 
   ```json
   [
@@ -710,27 +795,36 @@ Free public geocoder (OpenStreetMap). Reference for Step 7.
   ]
   ```
 
-- Parse `lat`/`lon` with `Double.parseDouble` inside a `try/catch` (defensive).
-- Rate limit: ~1 request/second; a `User-Agent` identifying your app is required
-  by the usage policy. **Do not call the real service in tests** - mock the port.
-- An empty array or a non-2xx response = "no result" → Step 7.3 fallback.
+- An empty array or a non-2xx response = "no result" → rule 7.3.
+- Usage policy: ~1 request/second, and a `User-Agent` identifying your app is
+  required. Never call it in a loop, never from an automated test.
 
----
+## Appendix B - XML support (Step 4)
 
-## Appendix B - Adding XML support (Step 4)
+| What | Coordinates | Why |
+|---|---|---|
+| Jackson XML module | `tools.jackson.dataformat:jackson-dataformat-xml` (version managed by the Spring Boot BOM) | `spring-boot-starter-web` ships the JSON converter only; with this module on the classpath Boot registers the XML converter automatically, and the DTOs stay unchanged. |
 
-Why an extra dependency: `spring-boot-starter-web` ships Jackson **JSON** only.
-To (de)serialize `application/xml` you add the Jackson XML module - once on the
-classpath, Spring Boot registers `MappingJackson2XmlHttpMessageConverter`
-automatically and your DTOs remain unchanged:
+- The edit is additive and the only `pom.xml` change of this TP; the exact block
+  lives in **README**, *Optional dependency edits*.
+- Element names follow the Java property names (`<negotiable>true</negotiable>`).
 
-```xml
-<dependency>
-    <groupId>com.fasterxml.jackson.dataformat</groupId>
-    <artifactId>jackson-dataformat-xml</artifactId>
-    <!-- version managed by the Spring Boot BOM -->
-</dependency>
-```
+## Appendix C - Writing your own tests (optional)
 
-- Element names follow the Java bean property names (e.g. `<negotiable>true</negotiable>`).
-- This is the **only** `pom.xml` change the exercise prescribes.
+Tests are not part of the deliverable; they are a good way to replay the `Verify`
+lists automatically. `spring-boot-starter-test` and `spring-security-test` are on
+the classpath (JUnit 5, AssertJ, Mockito).
+
+| Level | What it covers | Boots Spring? | Typical tools |
+|---|---|---|---|
+| **Unit** | one service with its collaborators mocked (ownership, visibility, versioning rules) | no | `@ExtendWith(MockitoExtension.class)` |
+| **Slice** | controllers + validation + `@ControllerAdvice`, service mocked | thin slice | `@WebMvcTest` |
+| **Integration** | the real stack: PostgreSQL, Liquibase, JPA, Security | yes | `@SpringBootTest(webEnvironment = RANDOM_PORT)` + the Boot 4 web test client |
+
+- Name each test after the behavior it checks (`nonOwnerUpdateIsRejected`), and
+  assert the observable contract (status, JSON fields, headers).
+- Simulate Basic users with `httpBasic("alice@test.org", "secret123")` from `spring-security-test`.
+- Mock the geocoding port (Step 7): never call the real Nominatim from a test.
+- Integration tests need a PostgreSQL: the running `listings-postgres` (port 5435),
+  or Testcontainers (`org.testcontainers:postgresql`, version managed by the BOM
+  already imported in `pom.xml`).

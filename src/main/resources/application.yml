@@ -1,19 +1,9 @@
-# =====================================================================
-#  Main configuration - exercise skeleton
-#  The skeleton starts the application (Spring context + Liquibase v1.0).
-#  To be completed: the configuration according to the subject.
-# =====================================================================
+# Main configuration. Every DB_* value is env-overridable (README, Run).
 spring:
   application:
     name: listings
 
   # ---------------- Database (PostgreSQL) ----------------
-  # Defaults target the docker-compose service `listings-postgres` (see
-  # docker-compose.yml). The follow-up TPs (Keycloak / Monitoring) reuse the
-  # same service, so no change is needed there. `mvn spring-boot:run` works
-  # out of the box against the locally published instance on host port 5435.
-  # Every value can be overridden with an environment variable, e.g.
-  #   SPRING_DATASOURCE_URL, SPRING_DATASOURCE_USERNAME, SPRING_DATASOURCE_PASSWORD
   datasource:
     url: "jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5435}/${DB_NAME:listings}"
     username: "${DB_USER:listings}"
@@ -33,12 +23,8 @@ spring:
   liquibase:
     change-log: classpath:db/changelog/db.changelog-master.yaml
 
-  # NB: JSON + XML content negotiation is left to Spring by default;
-  #     to be enabled/implemented according to exercise.md Step 4 (bonus).
-
   # ---------------- Serialization (Jackson) ----------------
-  # NB: null fields are NOT emitted by default (useful for the V1/V2
-  #     visibility contract: a missing field = not exposed).
+  # null fields are not serialized (used by exercise.md Step 6b)
   jackson:
     default-property-inclusion: non_null
 
@@ -72,11 +58,11 @@ logging:
 
 # ---------------- Application properties ----------------
 listings:
-  # default active version (fallback) - see exercise.md Step 6
+  # exercise.md Step 6a
   api:
     default-version: V1
     supported-versions: V1,V2
-  # GPS enrichment (Nominatim) - see exercise.md Step 7
+  # exercise.md Step 7
   geo:
     enabled: true
     endpoint: "https://nominatim.openstreetmap.org"

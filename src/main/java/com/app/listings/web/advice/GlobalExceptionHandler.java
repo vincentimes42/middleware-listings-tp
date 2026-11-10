@@ -11,17 +11,7 @@ import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
-/**
- * Global exception handler. PROVIDED for: 422 (validation), 409 (duplicate
- * email) and 500 (generic).
- *
- * To be extended with the rest of the "Error handling & status codes"
- * table in exercise.md (400 unknown version, 403 owner check,
- * 404 inactive / not found, 415 / 406 content negotiation, ...).
- *
- * Keep the error-response format defined there (JSON: timestamp, status,
- * error, message, optional fields map).
- */
+/** Error responses (format: exercise.md, Conventions). 409 / 422 / 500 provided; add the other statuses here. */
 @ControllerAdvice
 public class GlobalExceptionHandler {
 

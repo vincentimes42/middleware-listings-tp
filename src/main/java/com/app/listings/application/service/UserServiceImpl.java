@@ -12,23 +12,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 
-/**
- * UserService implementation. PROVIDED (see exercise.md Step 1).
- *
- * This class already:
- *  - {@link #register(UserRequestDto)}: enforces email uniqueness
- *    (throws {@link EmailAlreadyExistsException} - the
- *    {@code GlobalExceptionHandler} maps it to 409), hashes the
- *    password via the provided {@link PasswordEncoder} bean (BCrypt),
- *    and stamps `registration_date` with the current instant.
- *  - {@link #findById(Long)} / {@link #findByEmail(String)}: lookups
- *    used by the controller and by the {@code AppUserDetailsService}
- *    (see {@code SecurityConfig}) for Basic-auth.
- *
- * The student's only job in Step 1 is to wire the controller
- * ({@code AuthController}) to this service - see the step's Hints and
- * Acceptance checklist in exercise.md.
- */
+/** Provided (exercise.md Step 1). */
 @Service
 @Transactional
 public class UserServiceImpl implements UserService {

@@ -4,13 +4,7 @@ import com.app.listings.domain.Role;
 
 import java.time.Instant;
 
-/**
- * RESPONSE DTO for POST /auth/register (and GET /auth/me) — provided.
- *
- * The password and its hash are NEVER serialized in the response
- * (see exercise.md Step 1.1). All other identity fields are safe to
- * publish.
- */
+/** Account response - provided. Never exposes the password hash. */
 public class UserResponseDto {
 
     private Long id;

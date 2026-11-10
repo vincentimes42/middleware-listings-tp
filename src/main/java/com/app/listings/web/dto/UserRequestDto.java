@@ -4,15 +4,7 @@ import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 
-/**
- * REQUEST DTO for POST /auth/register — provided.
- *
- * Used by the controller for the registration endpoint (see
- * exercise.md Step 1, user story). Fields map 1:1 to the domain
- * {@link com.app.listings.domain.entity.User} identity attributes; the
- * raw {@code password} is never persisted, only the BCrypt hash is stored
- * (see {@code user.password_hash}).
- */
+/** Registration body - provided. */
 public class UserRequestDto {
 
     @Email(message = "a valid email is required")

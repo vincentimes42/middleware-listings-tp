@@ -1,8 +1,6 @@
 package com.app.listings.domain;
 
-/**
- * Listing categories (see exercise.md Step 2 data contract - 9 values).
- */
+/** Listing categories. */
 public enum Category {
     ELECTRONICS,
     FURNITURE,

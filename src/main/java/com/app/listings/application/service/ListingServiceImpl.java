@@ -3,11 +3,7 @@ package com.app.listings.application.service;
 import com.app.listings.domain.entity.Listing;
 import org.springframework.stereotype.Service;
 
-/**
- * ListingService implementation.
- * To be completed according to exercise.md (Steps 2-3 - CRUD & security,
- * Step 6 - versioning, Step 7 - geolocation).
- */
+/** Listing business rules - exercise.md Steps 2, 3, 7 and 8. */
 @Service
 public class ListingServiceImpl implements ListingService {
 

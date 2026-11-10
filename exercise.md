@@ -220,13 +220,18 @@ and read their own profile on `GET /auth/me`.
    `UserRequestDto` (validation), `UserResponseDto.from(User)` (no password),
    `GlobalExceptionHandler` (409, 422) and `SecurityConfig` (`httpBasic`, BCrypt,
    `UserDetailsService` by email, `/auth/register` public).
+   - *Why:* Knowing what already exists keeps this step about wiring an endpoint, not about rebuilding security plumbing.
 2. **Modify** `web/controller/AuthController.java` — inject `UserService`.
+   - *Why:* The controller only translates HTTP into a service call; the business rules stay in the service.
 3. **Wire** `register`: take a validated `UserRequestDto` body, call
    `userService.register(...)`, return the `UserResponseDto` with status **201**
    and a `Location` header pointing at the new resource.
+   - *Why:* A 201 with a `Location` header is the REST convention that tells the client a resource was created and where to find it.
 4. **Wire** `me`: resolve the authenticated principal (its username is the
    email), load the user through `UserService`, return its `UserResponseDto`.
+   - *Why:* `/auth/me` proves that Basic authentication works end to end: credentials in, the matching account out.
 5. **Rebuild** the stack and run `Verify`.
+   - *Why:* The Docker image embeds the compiled code: without a rebuild, the container keeps running the previous version.
 
 ### Expected behavior
 
@@ -276,24 +281,34 @@ listing or browse a paginated, filtered list without an account.
    changeSet that **adds** the V1 columns to `listing`: `title`, `description`,
    `price`, `category`, `creation_date`, `active`, `user_id` (`addColumn` only;
    never edit `v1.0-init.yaml`, it is already applied).
+   - *Why:* The schema is code: a new changeSet adds the columns without touching what is already applied in every database.
 2. **Modify** `db.changelog-master.yaml` — include `v1.0.2-listing.yaml` after
    `v1.0.1-identity.yaml`.
+   - *Why:* Liquibase only runs the files listed in the master changelog, in that order.
 3. **Modify** `domain/entity/Listing.java` — map the V1 columns and the
    `@ManyToOne` relation `owner` (→ `user_id`), with getters and fluent setters.
+   - *Why:* `ddl-auto` is `none`, so Hibernate only maps the columns Liquibase created; the `owner` relation is what ties a listing to its owner.
 4. **Complete** `web/dto/ListingRequestDto.java` (V1 writable fields + validation)
    and `web/dto/ListingResponseDto.java` (V1 public fields only: no `active`).
+   - *Why:* Separate request and response DTOs keep the HTTP contract independent of the entity, and validation rejects bad input before it reaches the service.
 5. **Create** `domain/exception/ResourceNotFoundException.java` and **add** its
    `@ExceptionHandler` (→ 404) in `GlobalExceptionHandler`.
+   - *Why:* A dedicated domain exception lets the service say "not found" without knowing anything about HTTP.
 6. **Modify** `domain/repository/ListingRepository.java` — paginated queries for
    the list, with the optional filters `category` and `maxPrice`, active listings only.
+   - *Why:* Filtering and paginating in the database avoids loading the whole table in memory.
 7. **Implement** `create`, `findById` and the list use-case in
    `ListingServiceImpl` (the creator becomes the owner; `active = true`;
    `creationDate = now`).
+   - *Why:* The service is the single place where business rules live (who owns what, default values).
 8. **Modify** `ListingController` — `POST /listings`, `GET /listings`,
    `GET /listings/{id}`; return the list as a `PagedModel` (see Conventions).
+   - *Why:* `PagedModel` gives the list a stable JSON shape (`content` + `page`) that clients can rely on.
 9. **Modify** `config/SecurityConfig.java` — make `GET /listings` and
    `GET /listings/**` public. All other `/listings` requests stay authenticated.
+   - *Why:* Browsing must not require an account: Spring Security denies everything not explicitly allowed.
 10. **Rebuild** and run `Verify`.
+    - *Why:* Liquibase applies the new changeSet at startup, so the stack must restart with the new image.
 
 ### Expected behavior
 
@@ -349,17 +364,24 @@ listing disappears for everyone else, and the full security matrix holds.
 1. **Modify** `config/SecurityConfig.java` — `POST`, `PUT`, `DELETE` on
    `/listings/**` require the role `SELLER`; `/auth/register`, `/actuator/**`,
    OpenAPI and Swagger UI stay public.
+   - *Why:* The role answers "may this caller write at all?" (401 otherwise); it is checked before any controller code runs.
 2. **Modify** `ListingRequestDto` — accept an optional `active` boolean (write-only).
+   - *Why:* `active` is how the owner hides a listing without deleting it.
 3. **Implement** `update` and `delete` in `ListingServiceImpl` — load the listing
    (404 if unknown), then compare its owner with the current user: not the owner
    → throw `AccessDeniedException`.
+   - *Why:* Ownership depends on data (who owns this listing), which only the service knows, hence the 403 lives there and not in `SecurityConfig`.
 4. **Add** the `@ExceptionHandler(AccessDeniedException.class)` → **403** in
    `GlobalExceptionHandler` (see the *Trap* in Conventions).
+   - *Why:* Without an explicit mapping, the provided generic handler turns the exception into a 500.
 5. **Modify** `findById` and the list use-case — a hidden listing (`active = false`)
    is visible to its owner only: absent from lists, **404** on detail for others.
+   - *Why:* Applying the same visibility rule in list and detail keeps the API consistent: a hidden listing cannot leak through either path.
 6. **Modify** `ListingController` — `PUT /listings/{id}` (200 + body) and
    `DELETE /listings/{id}` (204).
+   - *Why:* PUT and DELETE complete the CRUD so that the ownership rule has something to protect.
 7. **Rebuild** and run `Verify`.
+   - *Why:* Rebuild before running the security matrix: every cell must be observed on the new code.
 
 ### Expected behavior
 
@@ -416,11 +438,15 @@ Use listing `1` (Alice's bike) and listing `2` (Alice's book) from Step 2.
 
 1. **Add** the Jackson XML dependency (exact block: **README**, *Optional
    dependency edits*; what/why: Appendix B).
+   - *Why:* Spring Boot ships a JSON converter only; the XML module adds the second format without touching the DTOs.
 2. **Add** `@ExceptionHandler`s for `HttpMediaTypeNotSupportedException` (→ 415)
    and `HttpMediaTypeNotAcceptableException` (→ 406) in `GlobalExceptionHandler`.
+   - *Why:* The framework detects unsupported media types itself; mapping them keeps the error format of the Conventions.
 3. **Force** every error response of `GlobalExceptionHandler` to
    `application/json`, whatever the `Accept` header.
+   - *Why:* A client that cannot parse XML errors would be stuck; a single error format keeps error handling simple for every client.
 4. **Rebuild** and run `Verify`.
+   - *Why:* Content negotiation is set up when the context starts, so the new dependency needs a rebuilt image.
 
 ### Expected behavior
 
@@ -461,9 +487,13 @@ the V1 API is unchanged and existing rows are untouched.
    changeSet that **adds** 7 nullable columns to `listing`: `negotiable` (BOOLEAN),
    `street_address`, `city`, `postal_code`, `country` (VARCHAR), `latitude`,
    `longitude` (DOUBLE PRECISION). `addColumn` only.
+   - *Why:* Additive, nullable columns let the schema evolve without breaking existing rows or the running V1 API.
 2. **Modify** `db.changelog-master.yaml` — include it last (the commented line is already there).
+   - *Why:* Adding the file last guarantees it runs after every previous migration.
 3. **Modify** `domain/entity/Listing.java` — map the 7 attributes (no DTO change yet).
+   - *Why:* Mapping the columns now prepares V2 while keeping the V1 contract unchanged.
 4. **Rebuild** and run `Verify`.
+   - *Why:* The restart applies the migration: `DATABASECHANGELOG` then shows exactly what ran.
 
 ### Expected behavior
 
@@ -504,15 +534,21 @@ default, unknown versions are refused with **400**, and V1 announces its sunset.
 1. **Modify** `config/ApiVersioningConfig.java` — override
    `configureApiVersioning(ApiVersionConfigurer)`: resolve the version from the
    query parameter `version`, supported versions `V1` and `V2`, default `V1`.
+   - *Why:* Declaring versions centrally lets Spring route each request to the right handler and reject unknown versions for you.
 2. **Split** `ListingController` into `ListingControllerV1` and
    `ListingControllerV2` (same `/listings` path, `version = "V1"` / `"V2"` on the
    mappings). Both delegate to the same `ListingService`.
+   - *Why:* One controller per version keeps each contract readable; the shared service guarantees identical business rules.
 3. **Create** the V2 response DTO (`ListingV2ResponseDto`: V1 fields + `negotiable`)
    and **accept** `negotiable` in the V2 request DTO.
+   - *Why:* A distinct V2 DTO makes the contract difference explicit instead of hiding it behind conditions.
 4. **Add** an `@ExceptionHandler` for the framework's
    `InvalidApiVersionException` → **400** with the body of rule 6.3.
+   - *Why:* The framework raises the exception; mapping it gives the client the list of versions it can use.
 5. **Add** the `Deprecation` and `Sunset` headers on every V1 response, and only V1.
+   - *Why:* `Deprecation` and `Sunset` tell existing V1 clients, in a machine-readable way, that they must migrate and by when.
 6. **Rebuild** and run `Verify`.
+   - *Why:* Routing changes are only visible on a restarted application.
 
 ### Expected behavior
 
@@ -558,13 +594,18 @@ publishes one OpenAPI document per version.
 
 1. **Modify** `ListingV2ResponseDto` — add `active`, `streetAddress`, `city`,
    `postalCode`, `country`, `latitude`, `longitude`.
+   - *Why:* The V2 contract carries the owner-only fields; whether they are filled is decided per caller.
 2. **Modify** the V2 request DTO — accept the address fields (`latitude` /
    `longitude` are not writable: Step 7 computes them).
+   - *Why:* Coordinates are computed by the server (Step 7), so a client must not be able to set them.
 3. **Modify** `ListingControllerV2` (or a mapper) — fill the owner-only fields
    **only** when the caller is the owner; leave them `null` otherwise.
+   - *Why:* With Jackson `non_null`, a field left `null` is not serialized: that is how the same DTO serves owners and others.
 4. **Create** an OpenAPI configuration class in `config/` — two `GroupedOpenApi`
    beans (`v1`, `v2`), each with its own title.
+   - *Why:* One OpenAPI document per version lets each client generate code against the exact contract it uses.
 5. **Rebuild** and run `Verify`.
+   - *Why:* Rebuild and compare the same request as owner, as another seller and anonymously.
 
 ### Expected behavior
 
@@ -609,14 +650,19 @@ and `longitude` through Nominatim; a geocoder failure never fails the request.
 1. **Create** a port `application/service/GeocodingPort.java` (address in,
    optional coordinates out) and an adapter `NominatimGeocodingClient` using
    `RestClient`, configured from `listings.geo.*` (`application.yml`).
+   - *Why:* A port isolates the external service: the business code stays testable and the geocoder can be replaced.
 2. **Configure** the adapter with a 3-second connect + read timeout and a
    `User-Agent` header (Nominatim usage policy, Appendix A).
+   - *Why:* A slow external service must not freeze your API, and Nominatim refuses anonymous clients.
 3. **Call** the port from `ListingServiceImpl` on V2 **create** and **update**,
    only when `streetAddress` is non-blank.
+   - *Why:* Calling only when an address is given avoids useless calls to a rate-limited public service.
 4. **Handle** every failure (network, timeout, non-2xx, empty array, bad number):
    log one WARN line with the address and the reason, keep the coordinates `null`,
    continue.
+   - *Why:* Enrichment is best effort: a geocoder outage must never fail the user's request.
 5. **Rebuild** and run `Verify`.
+   - *Why:* Rebuild, then test the success path and the failure path separately.
 
 ### Expected behavior
 
@@ -657,9 +703,12 @@ tagged with the application name.
 ### Build it
 
 1. **Inject** `MeterRegistry` in `ListingServiceImpl`.
+   - *Why:* `MeterRegistry` is the entry point of Micrometer: what you register there is exposed by Actuator (and scraped by Prometheus in the Monitoring TP).
 2. **Increment** the counter `listings.created` once per successful creation
    (after the listing is saved, whatever the API version).
+   - *Why:* A business counter shows what the service does, not only that it is up.
 3. **Rebuild** and run `Verify`.
+   - *Why:* The counter must be read on the running application, before and after a creation.
 
 ### Expected behavior
 
@@ -693,13 +742,19 @@ point, closest first.
 
 1. **Modify** `ListingControllerV2` — accept the optional `lat`, `lng`, `radius`
    query parameters on `GET /listings`.
+   - *Why:* Distance search is a V2 feature: it relies on the coordinates that only V2 exposes.
 2. **Validate** them (all three or none, ranges) → **400** via a dedicated
    exception and `@ExceptionHandler`.
+   - *Why:* Rejecting incomplete or out-of-range input early gives a clear 400 instead of a wrong result.
 3. **Implement** the search (in memory, SQL, or bounding box + exact distance —
    your choice), applying the Step 3 visibility and the Step 6b field rules.
+   - *Why:* Several approaches are valid; choosing one and knowing its cost is the point of the step.
 4. **Make** V1 reject these parameters → **400**.
+   - *Why:* V1 is frozen: new features must not change its contract.
 5. **Document** your approach and its limits in your README.
+   - *Why:* Explaining the trade-off (precision, performance) is part of the deliverable.
 6. **Rebuild** and run `Verify`.
+   - *Why:* Check both positive and negative cases on the rebuilt application.
 
 ### Expected behavior
 
@@ -742,8 +797,11 @@ point, closest first.
 1. **Complete** your team's `README.md`: how to run, every endpoint with one
    example (`curl`), versioning usage, metrics, the bonus steps you did, your
    technical choices.
+   - *Why:* Another team must be able to run and check your work without asking you anything.
 2. **Remove** every `TODO` and `Not implemented yet` from `src/main`.
+   - *Why:* Leftover stubs mean unfinished code paths in production.
 3. **Run** the `Final checks` on a fresh stack.
+   - *Why:* A fresh stack (`down -v`) proves that the migrations and the run instructions work from zero.
 
 ### Expected behavior
 

@@ -12,13 +12,16 @@ The specification describes **behaviors, contracts, and status codes**. It does
 **not** prescribe the internal design: structure the code as you see fit, as
 long as the **observable behavior** matches the contract.
 
-**Validation method (the contract):** every step has a **`Verify`** section
-(Step 10: **`Final checks`**), a checklist of **`curl`** calls, **`psql`**
-reads, and **`grep`** of your own Java. That checklist **is** the definition of
-done for the step. Every command is copy-pasteable in
-[`docs/verification.md`](docs/verification.md). Writing Java tests is
-**encouraged but optional**; it is **not** part of the deliverable.
-`ListingsSmokeTest` is the minimum that must stay green (`mvn clean verify`).
+**Validation method (the contract):** each step's **`Expected behavior`** is
+the contract. Its **`Verify`** section (Step 10: **`Final checks`**) is the
+definition of done: one section of [`docs/verification.md`](docs/verification.md)
+to run (`curl`, `psql`, `grep`), plus the few checks the contract table cannot
+show. Writing Java tests is **encouraged but optional**; it is **not** part of
+the deliverable. `ListingsSmokeTest` is the minimum that must stay green
+(`mvn clean verify`).
+
+New to Maven or Spring Boot, or writing tests? Read
+[`docs/primer.md`](docs/primer.md) first (5 minutes).
 
 > **Prerequisite:** none — this is TP1. Install and run instructions are in
 > [`README.md`](README.md).
@@ -33,70 +36,8 @@ done for the step. Every command is copy-pasteable in
 | **Build it** | the changes, grouped by layer, in order; the `→` line under each item says what breaks without it |
 | **Checkpoint** | a quick call to confirm a group works before starting the next one |
 | **Expected behavior** | the contract: statuses, bodies, rules |
-| **Verify** | the definition of done (commands in `docs/verification.md`) |
-| **If you are stuck** | pointers to the class, annotation, or documentation; never the full code |
-
----
-
-## Before you start — the two tools you will use
-
-New to Maven or Spring Boot? This 2-minute mental model makes the steps below
-easier to follow.
-
-### Maven — what you actually do
-
-**Maven builds a Java project from a `pom.xml`** (dependencies, plugins). Two
-commands cover this TP:
-
-| Maven command | What it does |
-|---|---|
-| `mvn spring-boot:run` | start the application (port 8080) |
-| `mvn clean verify` | clean, compile, test, and package |
-
-Key idea: to use a library you add a `<dependency>` to `pom.xml`; you never
-copy `jar` files by hand.
-
-### Spring Boot — what you actually do
-
-**You write annotated classes; Spring Boot wires the rest.** `@RestController`,
-`@Service`, `@Repository`, `@Entity`, `@Configuration` and a few
-`application.yml` keys give you the HTTP server, the DataSource, the security
-chain, and Liquibase. When a behavior looks implicit, look up the annotation or
-the `yml` key in the reference for the **exact versions of this project**:
-
-| Library | Version | Reference |
-|---|---|---|
-| Spring Boot | 4.1.1 | <https://docs.spring.io/spring-boot/4.1/reference/index.html> |
-| Spring Framework (MVC) | 7.0 | <https://docs.spring.io/spring-framework/reference/7.0/web/webmvc.html> |
-| Spring Security | 7.1 | <https://docs.spring.io/spring-security/reference/7.1/index.html> |
-| Spring Data JPA | 4.1 | <https://docs.spring.io/spring-data/jpa/reference/4.1/index.html> |
-| Jackson | 3.1 (`tools.jackson.*`, not `com.fasterxml.jackson.*`) | <https://github.com/FasterXML/jackson> |
-| springdoc-openapi | 3.1.1 | <https://springdoc.org/> |
-
-### The layers of this project
-
-Every request crosses the same layers. Each step changes one or more of them.
-
-```
-HTTP request
-  │
-  ▼
-security chain    config/SecurityConfig            who may call? (401)
-  │
-  ▼
-controller        web/controller/*                 HTTP in/out: parameters, DTOs, status codes
-  │                web/dto/*                        the JSON contract (what the client sends and sees)
-  ▼
-service           application/service/*            business rules: ownership, visibility, defaults
-  │
-  ▼
-repository        domain/repository/*              queries
-  │                domain/entity/*                  Java view of the tables (JPA)
-  ▼
-database          db/changelog/*.yaml              the tables themselves (Liquibase)
-
-errors from any layer ──> web/advice/GlobalExceptionHandler ──> JSON error + status
-```
+| **Verify** | the definition of done: the `docs/verification.md` section to run, plus the checks the table cannot show |
+| **If you are stuck** | folded: open it only when blocked; pointers to the class, annotation, or documentation, never the full code |
 
 ---
 
@@ -126,7 +67,7 @@ Everything you build sits on this domain. Each step below is one facet of it.
 
 **`Listing`** — an item offered for sale (table `listing`, **you complete it**).
 
-| attribute | V1 (Step 2) | V2 (Steps 5-6) | visible to |
+| attribute | V1 (Step 2a) | V2 (Steps 5-6b) | visible to |
 |---|:--:|:--:|---|
 | `id`, `title` (1-120), `description` (0-2000), `price` (>0), `category` (9 values), `creationDate` | ✓ | ✓ | everyone |
 | `active` | stored | ✓ | owner only (V2) |
@@ -149,13 +90,38 @@ lists for everyone except its owner, and reads as **404** for non-owners.
 > ownership, the active lifecycle*): almost every `Expected behavior` below is
 > a rule about one of them.
 
+### The layers of this project
+
+Every request crosses the same layers. Each step changes one or more of them.
+
+```
+HTTP request
+  │
+  ▼
+security chain    config/SecurityConfig            who may call? (401)
+  │
+  ▼
+controller        web/controller/*                 HTTP in/out: parameters, DTOs, status codes
+  │                web/dto/*                        the JSON contract (what the client sends and sees)
+  ▼
+service           application/service/*            business rules: ownership, visibility, defaults
+  │
+  ▼
+repository        domain/repository/*              queries
+  │                domain/entity/*                  Java view of the tables (JPA)
+  ▼
+database          db/changelog/*.yaml              the tables themselves (Liquibase)
+
+errors from any layer ──> web/advice/GlobalExceptionHandler ──> JSON error + status
+```
+
 ---
 
 ## Scope
 
 | Track | Steps | Indicative time |
 |---|---|---|
-| **CORE** (required) | 1 · 2 · 3 · 5 · 6 · 8 | ~5h30 |
+| **CORE** (required) | 1 · 2a · 2b · 3 · 5 · 6a · 6b · 8 | ~5h30 |
 | **BONUS** (start only when the core `Verify` lists are green) | 4 (JSON + XML) · 7 (GPS enrichment) · 9 (distance search) | ~2h30 |
 | **DELIVERY** | 10 (final integration) | ~0h30 |
 
@@ -170,62 +136,21 @@ it on the first pass and come back to it once the core is green.
 - Monetary amounts are decimals with 2 digits (`350.00`).
 - Error responses are JSON:
   `{ "timestamp": "...", "status": 4xx, "error": "...", "message": "..." }`,
-  plus a `fields` map for validation errors.
+  plus a `fields` map for validation errors. Every status and the exception
+  behind it: [Appendix C](#appendix-c--status-codes).
+- **Catch-all handler:** the provided `GlobalExceptionHandler` maps any
+  exception without a more specific handler, framework 4xx included, to
+  **500**. Each step names the handler to add for its 4xx.
 - Content type: `application/json` by default; `application/xml` is added in
   Step 4 (bonus).
 - API versions: `V1` and `V2`, selected with the query parameter
-  `?version=V1|V2` (Step 6). No parameter means V1.
+  `?version=V1|V2` (Step 6a). No parameter means V1.
 - Authentication: **HTTP Basic**, no login form, no session.
 - Test accounts used in every `Verify`: `alice@test.org` (owner) and
   `bob@test.org` (non-owner), password `secret123`.
-- In Docker mode, every Java change needs a rebuild:
+- **Rebuild after every Java change:** in Docker mode the container runs the
+  image built earlier, so a change is not in it until
   `docker compose up -d --build listings-api` (see [`README.md`](README.md)).
-
----
-
-## Error handling & status codes (cross-cutting)
-
-Every step relies on this table. When `Expected behavior` says "→ 404", the
-response carries status **404** and a **JSON body** in the shape above.
-
-| Status | Trigger | Mechanism | Where |
-|---|---|---|---|
-| 400 | Malformed JSON body, unknown enum value (Step 2) | `HttpMessageNotReadableException` | you add it |
-| 400 | Unknown API version, e.g. `?version=V99` (Step 6) | Spring's `org.springframework.web.accept.InvalidApiVersionException` | you add it |
-| 400 | Missing or invalid distance parameters (Step 9) | `MissingServletRequestParameterException`, `MethodArgumentTypeMismatchException`, `HandlerMethodValidationException` | you add it |
-| 401 | Missing or invalid Basic credentials | Spring Security (the request never reaches your controller) | provided |
-| 403 | Authenticated non-owner `PUT` / `DELETE` (Step 3) | `org.springframework.security.access.AccessDeniedException` | you add it |
-| 404 | Unknown listing; hidden listing read by a non-owner (Steps 2-3) | your `ResourceNotFoundException` (`com.app.listings.domain.exception`) | you add it |
-| 406 | `Accept` type not supported, e.g. `text/csv` (Step 4) | `HttpMediaTypeNotAcceptableException` | you add it |
-| 409 | Email already registered (Step 1) | `EmailAlreadyExistsException` | provided |
-| 415 | `Content-Type` not supported, e.g. `application/octet-stream` (Step 4) | `HttpMediaTypeNotSupportedException` | you add it |
-| 422 | DTO validation errors, with a `fields` map (Steps 1-2) | `MethodArgumentNotValidException` | provided |
-| 500 | Unexpected error | catch-all `@ExceptionHandler(Exception.class)` | provided |
-
-> **Read this before Step 2.** The provided `GlobalExceptionHandler` has a
-> **catch-all** handler for `Exception`. It catches **every** exception that
-> has no more specific handler, including the framework's own 4xx exceptions.
-> A status in this table that you have not mapped explicitly comes out as
-> **500**, not as the expected 4xx. Each step tells you which handler to add.
-
----
-
-## Testing strategy (only if you write tests — optional)
-
-Java tests are **not** a deliverable. If you write some, three levels fit this
-TP:
-
-| Level | What it covers | Boots Spring? | Fast? |
-|---|---|---|---|
-| **Unit** | one service with its collaborators faked (Mockito) | no | yes |
-| **Slice** | the web layer only (controllers, validation, `@ControllerAdvice`) | a thin slice | yes |
-| **Integration** | the real stack: PostgreSQL, Liquibase, JPA, Security, end to end | yes | no |
-
-A good split: business rules (ownership, `active=false`, V2 visibility) as
-**unit** tests; status codes and JSON shape as a few **integration** tests.
-`spring-boot-starter-test` and `spring-security-test` are on the classpath.
-The geocoding port (Step 7) is always **mocked** in tests; never call the real
-Nominatim service from a test.
 
 ---
 
@@ -267,9 +192,6 @@ handlers. Do not re-implement them.
    → With HTTP Basic there is no session or token: Spring Security has
    already checked the credentials of this request; `me` only reads whose
    they are.
-4. **Rebuild** the image and restart.
-   → In Docker mode the container runs the image built earlier: without a
-   rebuild, your change is not in it.
 
 ### Expected behavior
 
@@ -287,13 +209,11 @@ handlers. Do not re-implement them.
 
 ### Verify
 
-- [ ] Register `alice@test.org` → **201**, body has `role: "SELLER"` and no password field ([`docs/verification.md` §5](docs/verification.md))
-- [ ] Register `alice@test.org` again → **409** + JSON body
-- [ ] Register `{"email":"x","username":"","password":"123"}` → **422** + `fields` with 3 entries
-- [ ] `GET /auth/me` without `-u` → **401**; with `-u alice@test.org:secret123` → **200**
+- [ ] [`docs/verification.md` §5](docs/verification.md): every result matches *Expected behavior*
 - [ ] `psql`: `password_hash` of `alice@test.org` starts with `$2a$`, never `secret123`
 
-### If you are stuck
+<details>
+<summary><strong>If you are stuck</strong></summary>
 
 - `ResponseEntity.status(...)` or `@ResponseStatus` sets the 201.
 - The current user: an `Authentication` (or `Principal`) controller parameter;
@@ -302,26 +222,28 @@ handlers. Do not re-implement them.
   request. Reference:
   <https://docs.spring.io/spring-security/reference/7.1/servlet/authentication/passwords/basic.html>
 
+</details>
+
 ---
 
-## Step 2 - Listings CRUD (V1)   CORE
+## Step 2a - Create and read a listing   CORE
 
-**Outcome** — An authenticated seller creates, lists (paginated, filtered),
-reads, updates, and deletes listings; invalid input is **422**, a malformed
-body is **400**, an unknown id is **404**.
+**Outcome** — An authenticated seller creates a listing (**201** +
+`Location`) and reads it by id; invalid input is **422**, a malformed body is
+**400**, an unknown id is **404**.
 
 **Why this step** — This is the full vertical slice of a REST resource, from
 the table to the JSON. You build each layer once, here; every later step only
 adds rules to layers that already exist.
 
-> In this step **every** call is authenticated (the skeleton requires it).
+> In Steps 2a-2b **every** call is authenticated (the skeleton requires it).
 > Public reads, the owner-only rule, and hidden listings come in Step 3.
 
 ### How it fits
 
 ```
 POST /listings ──> ListingController ──> ListingService ──> ListingRepository ──> listing table
-                   (group C)             (group C)          (group C)              (group A)
+                   (group C)             (group C)          (provided)             (group A)
                       │  ▲
           ListingRequestDto  ListingResponseDto                 Listing entity
                    (group B)                                    (group A)
@@ -364,59 +286,109 @@ errors ──> GlobalExceptionHandler (group D)
 5. **Complete** `web/dto/ListingResponseDto.java` — the V1 fields (`id`,
    `title`, `description`, `price`, `category`, `creationDate`) and a static
    factory from `Listing`.
-   → Step 6 makes V1 and V2 responses differ; that is only possible if the
+   → Step 6b makes V1 and V2 responses differ; that is only possible if the
    JSON comes from a DTO, not from the entity.
 
 **C. Behavior — rules and HTTP**
 
-6. **Add** to `domain/repository/ListingRepository.java` — a paginated query
-   that applies the optional `category` and `maxPrice` filters.
-   → Filtering and paging in SQL: the database returns one page, not the
-   whole table for Java to sort through.
-7. **Create** `domain/exception/ResourceNotFoundException.java`.
+6. **Create** `domain/exception/ResourceNotFoundException.java`.
    → The service says "no such listing" in domain terms; group D turns it
    into a 404. Without it, the service can only return `null` or fail.
-8. **Implement** `ListingService` and `ListingServiceImpl` — replace the
-   `Object dto` parameters with your request DTO, make `update` return the
-   updated `Listing`; `create` sets the owner, `creationDate`, and
-   `active = true`; an unknown id → `ResourceNotFoundException`.
+7. **Implement** `ListingService` and `ListingServiceImpl` for `create` and
+   `findById` — replace the `Object dto` parameters with your request DTO;
+   `create` sets the owner, `creationDate`, and `active = true`; an unknown id
+   → `ResourceNotFoundException`.
    → Rules live in the service so that every endpoint, and V2 later, reuses
    them. `Object dto` was only a placeholder.
-9. **Implement** `web/controller/ListingController.java` — the five endpoints
-   of the table below, a `Pageable` parameter with a default size of 20, the
-   two optional filters, `@Valid` request bodies; resolve the caller's id with
-   `UserService.findByEmail`.
+8. **Implement** in `web/controller/ListingController.java` — `POST /listings`
+   and `GET /listings/{id}`, with a `@Valid` request body; resolve the
+   caller's id with `UserService.findByEmail`.
    → The controller only translates HTTP. The caller's id is needed to set
    the owner on create, and in Step 3 to check it.
-10. **Annotate** `ListingsApplication` (or a `@Configuration` class) with
-    `@EnableSpringDataWebSupport(pageSerializationMode = VIA_DTO)`.
-    → Serializing Spring's `PageImpl` as-is gives a JSON shape that may change
-    between versions (Spring logs a WARN). `VIA_DTO` gives the stable
-    `{content, page}` shape used in `Verify`.
 
-> **Checkpoint** — `POST /listings` as alice → **201**; `GET /listings` → a
-> page containing it.
+> **Checkpoint** — `POST /listings` as alice → **201**; `GET` on its
+> `Location` → the same body.
 
 **D. Errors**
 
-11. **Add** to `web/advice/GlobalExceptionHandler.java` — a **404** handler for
-    `ResourceNotFoundException` and a **400** handler for
-    `HttpMessageNotReadableException`.
-    → Without them both cases reach the catch-all and return **500** (see
-    *Error handling*).
+9. **Add** to `web/advice/GlobalExceptionHandler.java` — a **404** handler for
+   `ResourceNotFoundException` and a **400** handler for
+   `HttpMessageNotReadableException`.
+   → Without them both cases reach the catch-all and return **500** (see
+   Appendix C).
 
 ### Expected behavior
 
 | Method | Path | Success | Errors |
 |---|---|---|---|
 | POST | `/listings` | **201** + body + `Location: /listings/{id}` | 422, 400, 401 |
-| GET | `/listings` | **200**, a page | 401 |
 | GET | `/listings/{id}` | **200** | 404, 401 |
-| PUT | `/listings/{id}` | **200** + updated body | 404, 422, 400, 401 |
-| DELETE | `/listings/{id}` | **204**, no body | 404, 401 |
 
 - The V1 body contains exactly `id`, `title`, `description`, `price`,
   `category`, `creationDate` (`description` is omitted when null).
+- **422** + `fields` for: blank title or title > 120 chars, description > 2000
+  chars, `price ≤ 0`, missing `price` or `category`.
+- **400** + JSON body for a malformed JSON body or an unknown `category` value
+  (e.g. `"NONSENSE"`); this is a parse error, not a validation error.
+
+### Verify
+
+- [ ] [`docs/verification.md` §6a](docs/verification.md): every result matches *Expected behavior*
+- [ ] `"category":"NONSENSE"` → **400** + JSON body (not 500)
+- [ ] `psql`: `SELECT id FROM databasechangelog` lists `v1.0.2-…`; `\d listing` shows the 7 V1 columns
+
+<details>
+<summary><strong>If you are stuck</strong></summary>
+
+- Liquibase `addColumn`: <https://docs.liquibase.com/change-types/add-column.html>.
+  Never edit `v1.0-init.yaml` or `v1.0.1-identity.yaml`: they are already
+  applied, and Liquibase refuses to start when an applied changeSet changes.
+- `@Enumerated(EnumType.STRING)` stores `SPORTS`, not `5`.
+- `ServletUriComponentsBuilder.fromCurrentRequest()` builds the `Location`.
+
+</details>
+
+---
+
+## Step 2b - List, update, delete   CORE
+
+**Outcome** — The seller lists listings (paginated, filtered), updates, and
+deletes them; an unknown id is **404**.
+
+**Why this step** — A collection endpoint never returns the whole table: the
+database filters and pages, and the page has a stable JSON shape that clients
+can rely on.
+
+### Build it
+
+1. **Add** to `domain/repository/ListingRepository.java` — a paginated query
+   that applies the optional `category` and `maxPrice` filters.
+   → Filtering and paging in SQL: the database returns one page, not the
+   whole table for Java to sort through.
+2. **Implement** `list`, `update`, and `delete` in `ListingService` and
+   `ListingServiceImpl` — `update` returns the updated `Listing`; an unknown id
+   → `ResourceNotFoundException`.
+   → The controller answers `PUT` with the new body, so it needs the updated
+   entity; the 404 comes from the handler of Step 2a.
+3. **Implement** in `ListingController` — `GET /listings` (a `Pageable`
+   parameter with a default size of 20, the two optional filters), `PUT` and
+   `DELETE /listings/{id}` (`@Valid` request body).
+   → Without the `Pageable` parameter, the list has no paging and no default
+   size.
+4. **Annotate** `ListingsApplication` (or a `@Configuration` class) with
+   `@EnableSpringDataWebSupport(pageSerializationMode = VIA_DTO)`.
+   → Serializing Spring's `PageImpl` as-is gives a JSON shape that may change
+   between versions (Spring logs a WARN). `VIA_DTO` gives the stable
+   `{content, page}` shape used in `Verify`.
+
+### Expected behavior
+
+| Method | Path | Success | Errors |
+|---|---|---|---|
+| GET | `/listings` | **200**, a page | 401 |
+| PUT | `/listings/{id}` | **200** + updated body | 404, 422, 400, 401 |
+| DELETE | `/listings/{id}` | **204**, no body | 404, 401 |
+
 - A page has the shape
   `{ "content": [...], "page": { "size", "number", "totalElements", "totalPages" } }`;
   the default `size` is 20; `?page=0&size=2` is honored.
@@ -425,34 +397,22 @@ errors ──> GlobalExceptionHandler (group D)
 - `PUT` replaces `title`, `description`, `price`, `category`; `active` is
   optional (absent = unchanged).
 - After `DELETE`, `GET /listings/{id}` → **404**.
-- **422** + `fields` for: blank title or title > 120 chars, description > 2000
-  chars, `price ≤ 0`, missing `price` or `category`.
-- **400** + JSON body for a malformed JSON body or an unknown `category` value
-  (e.g. `"NONSENSE"`); this is a parse error, not a validation error.
 
 ### Verify
 
-- [ ] `POST /listings` as alice → **201**, body has `id` and `creationDate`, response has a `Location` header ([`docs/verification.md` §6](docs/verification.md))
-- [ ] `GET /listings?page=0&size=2` → `page.size` is 2 and `page.totalElements` counts all listings
-- [ ] `?category=SPORTS&maxPrice=400` returns the bike; `?maxPrice=100` does not
-- [ ] `GET /listings/999999` → **404** + JSON body
-- [ ] `PUT` own listing → **200** with the new title; `DELETE` → **204**, then `GET` → **404**
-- [ ] Title of 130 chars and `price: -1` → **422**, `fields` names `title` and `price`
-- [ ] `"category":"NONSENSE"` → **400** + JSON body (not 500)
-- [ ] `psql`: `SELECT id FROM databasechangelog` lists `v1.0.2-…`; `\d listing` shows the 7 V1 columns
+- [ ] [`docs/verification.md` §6b](docs/verification.md): every result matches *Expected behavior*
+- [ ] `GET /listings?page=0&size=2` → `page.size` is 2 and `page.totalElements` counts all listings, not only the page
 
-### If you are stuck
+<details>
+<summary><strong>If you are stuck</strong></summary>
 
-- Liquibase `addColumn`: <https://docs.liquibase.com/change-types/add-column.html>.
-  Never edit `v1.0-init.yaml` or `v1.0.1-identity.yaml`: they are already
-  applied, and Liquibase refuses to start when an applied changeSet changes.
-- `@Enumerated(EnumType.STRING)` stores `SPORTS`, not `5`.
 - Optional filters: one `@Query` with `(:category IS NULL OR …)` clauses, or a
   Spring Data `Specification`. Derived queries need one method per filter
   combination. Reference:
   <https://docs.spring.io/spring-data/jpa/reference/4.1/repositories/query-methods-details.html>
 - `@PageableDefault(size = 20)` on the `Pageable` parameter sets the default.
-- `ServletUriComponentsBuilder.fromCurrentRequest()` builds the `Location`.
+
+</details>
 
 ---
 
@@ -530,14 +490,12 @@ request ──> security chain ──────────> controller ──
 
 ### Verify
 
-- [ ] Run the matrix loop of [`docs/verification.md` §7](docs/verification.md): every cell matches the table above
-- [ ] Anonymous `POST /listings` → **401** with a `WWW-Authenticate: Basic` header
+- [ ] [`docs/verification.md` §7](docs/verification.md) (matrix loop included): every cell matches *Expected behavior*
 - [ ] bob `PUT` on alice's listing → **403** (not 401, not 404, not 500)
-- [ ] alice sets `active: false` → anonymous and bob: absent from the list and **404** on detail; alice: present, **200**
 - [ ] `curl -si -u alice@test.org:secret123 $API/auth/me | grep -i set-cookie` → no output
-- [ ] `/actuator/health`, `/actuator/info`, `/actuator/metrics` without credentials → **200**
 
-### If you are stuck
+<details>
+<summary><strong>If you are stuck</strong></summary>
 
 - `requestMatchers(HttpMethod.GET, …)` restricts a rule to one method; rules
   are evaluated top to bottom, first match wins. `hasRole("SELLER")` adds the
@@ -546,6 +504,8 @@ request ──> security chain ──────────> controller ──
 - `sessionManagement(…)` and `SessionCreationPolicy.STATELESS`.
 - Hidden listings in the list: a query with `active = true OR owner.id = :callerId`.
 - With an anonymous caller, the `Authentication` controller parameter is `null`.
+
+</details>
 
 ---
 
@@ -615,7 +575,8 @@ no converter matches ──> 415 (Content-Type) or 406 (Accept) ──> GlobalEx
 - [ ] `grep -n "dataformat-xml" pom.xml` → one `tools.jackson.dataformat` dependency, no `<version>`
 - [ ] `grep -n "APPLICATION_JSON" src/main/java/com/app/listings/web/advice/GlobalExceptionHandler.java` → one per handler
 
-### If you are stuck
+<details>
+<summary><strong>If you are stuck</strong></summary>
 
 - Spring Boot 4 uses **Jackson 3**: the XML module is
   `tools.jackson.dataformat:jackson-dataformat-xml`. The Jackson 2 artifact
@@ -625,6 +586,8 @@ no converter matches ──> 415 (Content-Type) or 406 (Accept) ──> GlobalEx
   response.
 - Reference:
   <https://docs.spring.io/spring-boot/4.1/reference/web/servlet.html>
+
+</details>
 
 ---
 
@@ -636,7 +599,7 @@ no converter matches ──> 415 (Content-Type) or 406 (Accept) ──> GlobalEx
 **Why this step** — In production the database is shared by running clients
 and already holds data: you cannot drop and recreate it. Schema changes are
 shipped as small, additive migrations, separately from the API changes that
-use them (Step 6).
+use them (Step 6b).
 
 ### Build it
 
@@ -654,7 +617,7 @@ use them (Step 6).
 3. **Modify** `domain/entity/Listing.java` — map the 7 attributes
    (`negotiable`, `streetAddress`, `city`, `postalCode`, `country`, `latitude`,
    `longitude`) with fluent setters.
-   → Step 6 reads and writes them. The V1 DTOs do not expose them, so the V1
+   → Step 6b reads and writes them. The V1 DTOs do not expose them, so the V1
    API does not change.
 4. **Rebuild** and restart **without** `down -v`.
    → This is the actual test of an additive migration: it runs on the data
@@ -670,14 +633,12 @@ use them (Step 6).
 
 ### Verify
 
-- [ ] `psql` `\d listing` lists the 7 new columns, all nullable ([`docs/verification.md` §9](docs/verification.md))
-- [ ] `psql`: listings created in Step 2 show `NULL` for `negotiable` and `latitude`
-- [ ] `psql`: `SELECT id FROM databasechangelog ORDER BY orderexecuted` ends with your `v1.1-…` changeSet; a second restart adds no row
-- [ ] `grep -n "v1.1-v2-fields" src/main/resources/db/changelog/db.changelog-master.yaml` → one active `include` line
-- [ ] The calls of [`docs/verification.md` §6 and §7](docs/verification.md) still give the same results
-- [ ] `mvn clean verify` → `BUILD SUCCESS`
+- [ ] [`docs/verification.md` §9](docs/verification.md): every result matches *Expected behavior*
+- [ ] A second restart adds no row to `databasechangelog`
+- [ ] [`docs/verification.md` §6 and §7](docs/verification.md) still give the same results
 
-### If you are stuck
+<details>
+<summary><strong>If you are stuck</strong></summary>
 
 - An attribute mapped in the entity without its Liquibase column fails at the
   first query (`ddl-auto: none`).
@@ -686,18 +647,83 @@ use them (Step 6).
 - A mistake in an applied changeSet is fixed by a **new** changeSet, never by
   editing the old one.
 
+</details>
+
 ---
 
-## Step 6 - Versioning (V1 + V2)   CORE
+## Step 6a - Version routing and deprecation   CORE
 
-**Outcome** — `?version=V1|V2` selects the contract (default V1); V1 responses
-announce their deprecation; V2 exposes `negotiable` to everyone and the private
-fields to the owner only; `?version=V99` → **400**; two OpenAPI documents are
-published.
+**Outcome** — `?version=V1|V2` selects the version (default V1); V1 responses
+announce their deprecation; `?version=V99` → **400**.
 
 **Why this step** — An API cannot change its contract under existing clients.
 Versioning lets V1 clients keep working, unchanged, while V2 adds fields; the
 deprecation headers tell V1 clients, in a machine-readable way, when V1 ends.
+
+### Build it
+
+1. **Implement** `config/ApiVersioningConfig.java` — override
+   `configureApiVersioning(ApiVersionConfigurer)`: version read from the query
+   parameter `version`, supported versions `1` and `2`, default version `1`.
+   → This tells Spring where to read the version and what to do without one.
+   Default `1` means existing clients, which send no parameter, keep the V1
+   contract.
+2. **Configure** in the same method a deprecation handler for version `1`:
+   deprecation date `2026-01-01T00:00:00Z`, sunset date `2027-01-01T00:00:00Z`.
+   → It produces the `Deprecation` and `Sunset` headers; without it, V1
+   clients get no warning before V1 is removed.
+3. **Add** to `GlobalExceptionHandler` — a **400** handler for Spring's
+   `InvalidApiVersionException` with the exact body below.
+   → Without it the catch-all returns 500. The body tells the client which
+   versions exist.
+
+### Expected behavior
+
+| Request | Version served |
+|---|---|
+| no `version` parameter | V1 |
+| `?version=V1`, `?version=v1`, `?version=1` | V1 |
+| `?version=V2`, `?version=v2`, `?version=2` | V2 (same body as V1 until Step 6b) |
+| `?version=V99` | **400** `{"error":"API version not available","availableVersions":["V1","V2"]}` |
+
+- Every V1 response carries `Deprecation: @1767225600` (RFC 9745, the
+  deprecation date as epoch seconds) and `Sunset: Fri, 1 Jan 2027 00:00:00 GMT`
+  (RFC 8594). V2 responses carry neither.
+- Non-versioned endpoints (`/auth/*`) resolve to the default version and may
+  carry the same headers; this is expected.
+
+### Verify
+
+- [ ] [`docs/verification.md` §10a](docs/verification.md): every result matches *Expected behavior*
+- [ ] `?version=V99` → **400** with the exact body above (not 500)
+
+<details>
+<summary><strong>If you are stuck</strong></summary>
+
+- Spring Framework 7 has **native** API versioning: the default version and
+  the 400 on an unsupported version come with the configuration; you do not
+  write a filter. Reference:
+  <https://docs.spring.io/spring-framework/reference/7.0/web/webmvc-versioning.html>
+- The default version parser accepts an optional `v`/`V` prefix: `V2` is parsed
+  as `2.0.0`.
+- Deprecation headers: `StandardApiVersionDeprecationHandler`
+  (`org.springframework.web.accept`), `configureVersion("1")`.
+- Map Spring's `InvalidApiVersionException`, not a class of your own with the
+  same name.
+
+</details>
+
+---
+
+## Step 6b - The V2 contract   CORE
+
+**Outcome** — V2 exposes `negotiable` to everyone and the private fields to
+the owner only; a V1 write never erases V2 data; two OpenAPI documents are
+published.
+
+**Why this step** — A new version is a new contract on the same business
+rules: only the DTOs change. Old and new clients share the data, so a V1
+client must never destroy what a V2 client wrote.
 
 ### How it fits
 
@@ -710,52 +736,36 @@ Spring versioning (ApiVersioningConfig)   reads ?version, default 1, unknown -> 
   ▼
 ListingController   method declared version = "1"   or   version = "2"
   │                        │                                │
-  │                 V1 DTOs (Step 2)              V2 DTOs (private fields null for non-owners)
+  │                 V1 DTOs (Step 2a)             V2 DTOs (private fields null for non-owners)
   ▼
 ListingService (same rules for both versions)
 ```
 
 ### Build it
 
-**A. Routing by version**
+**A. The V2 contract**
 
-1. **Implement** `config/ApiVersioningConfig.java` — override
-   `configureApiVersioning(ApiVersionConfigurer)`: version read from the query
-   parameter `version`, supported versions `1` and `2`, default version `1`.
-   → This tells Spring where to read the version and what to do without one.
-   Default `1` means existing clients, which send no parameter, keep the V1
-   contract.
-2. **Configure** in the same method a deprecation handler for version `1`:
-   deprecation date `2026-01-01T00:00:00Z`, sunset date `2027-01-01T00:00:00Z`.
-   → It produces the `Deprecation` and `Sunset` headers; without it, V1
-   clients get no warning before V1 is removed.
-
-> **Checkpoint** — `curl -sI $API/listings` shows `Deprecation` and `Sunset`.
-
-**B. The V2 contract**
-
-3. **Create** the V2 DTOs (or extend the V1 ones) — the V2 request adds
+1. **Create** the V2 DTOs (or extend the V1 ones) — the V2 request adds
    `negotiable`, `streetAddress`, `city`, `postalCode`, `country`, `latitude`,
    `longitude`; the V2 response adds the same fields and `active`, with a
    factory that leaves the private fields `null` for a non-owner.
    → The difference between versions is a difference of contract, so it lives
    in the DTOs. A `null` field is dropped from the JSON (`non_null` in
    `application.yml`), which is how non-owners do not see private fields.
-4. **Modify** `ListingController` — declare each endpoint for version `1` and
+2. **Modify** `ListingController` — declare each endpoint for version `1` and
    version `2` (`version` attribute of the mapping annotations), in one
    controller or two.
    → This is how Spring routes `?version=2` to the V2 method.
-5. **Modify** `ListingServiceImpl` — a V1 write never modifies the V2 columns.
+3. **Modify** `ListingServiceImpl` — a V1 write never modifies the V2 columns.
    → A V1 client does not know the V2 fields exist. If its `PUT` erased them,
    old clients would destroy the data of new ones.
 
-**C. Errors and documentation**
+> **Checkpoint** — as alice, `GET /listings/{id}?version=V2` → the body has
+> `active`.
 
-6. **Add** to `GlobalExceptionHandler` — a **400** handler for Spring's
-   `InvalidApiVersionException` with the exact body below.
-   → Without it the catch-all returns 500. The body tells the client which
-   versions exist.
-7. **Create** `config/OpenApiConfig.java` — two springdoc `GroupedOpenApi`
+**B. Documentation**
+
+4. **Create** `config/OpenApiConfig.java` — two springdoc `GroupedOpenApi`
    beans, groups `listings-v1` and `listings-v2`, titles `Listings API V1` and
    `Listings API V2`.
    → One document per contract: V1 and V2 client developers each read only
@@ -763,24 +773,12 @@ ListingService (same rules for both versions)
 
 ### Expected behavior
 
-| Request | Version served |
-|---|---|
-| no `version` parameter | V1 |
-| `?version=V1`, `?version=v1`, `?version=1` | V1 |
-| `?version=V2`, `?version=v2`, `?version=2` | V2 |
-| `?version=V99` | **400** `{"error":"API version not available","availableVersions":["V1","V2"]}` |
-
 | Field | V1, anyone | V2, anonymous or non-owner | V2, owner |
 |---|:--:|:--:|:--:|
 | `id`, `title`, `description`, `price`, `category`, `creationDate` | ✓ | ✓ | ✓ |
 | `negotiable` | — | ✓ | ✓ |
 | `active`, `streetAddress`, `city`, `postalCode`, `country`, `latitude`, `longitude` | — | — | ✓ |
 
-- Every V1 response carries `Deprecation: @1767225600` (RFC 9745, the
-  deprecation date as epoch seconds) and `Sunset: Fri, 1 Jan 2027 00:00:00 GMT`
-  (RFC 8594). V2 responses carry neither.
-- Non-versioned endpoints (`/auth/*`) resolve to the default version and may
-  carry the same headers; this is expected.
 - V2 `POST` / `PUT` accept the V2 fields. A V1 `PUT` leaves them unchanged.
 - Pagination, filters, ownership (403), and hidden listings (404) behave the
   same in V1 and V2.
@@ -789,29 +787,20 @@ ListingService (same rules for both versions)
 
 ### Verify
 
-- [ ] No parameter and `?version=V1` return the same body; neither contains `negotiable` ([`docs/verification.md` §10](docs/verification.md))
-- [ ] alice `PUT ?version=V2` with `negotiable` and an address → **200**; then V2 as alice shows `active` and the address, V2 as bob shows `negotiable` only
-- [ ] alice V1 `PUT` on that listing → V2 `GET` still shows the address (V1 did not erase it)
-- [ ] `curl -sI "$API/listings"` shows `Deprecation:` and `Sunset:`; `curl -sI "$API/listings?version=V2"` shows neither
-- [ ] `?version=V99` → **400** with the exact body above
+- [ ] [`docs/verification.md` §10b](docs/verification.md): every result matches *Expected behavior*
+- [ ] alice V1 `PUT` on a listing with an address → V2 `GET` still shows the address (V1 did not erase it)
 - [ ] The two `api-docs` groups return the titles `Listings API V1` and `Listings API V2`
 
-### If you are stuck
+<details>
+<summary><strong>If you are stuck</strong></summary>
 
-- Spring Framework 7 has **native** API versioning: the default version and
-  the 400 on an unsupported version come with the configuration; you do not
-  write a filter. Reference:
-  <https://docs.spring.io/spring-framework/reference/7.0/web/webmvc-versioning.html>
-- The default version parser accepts an optional `v`/`V` prefix: `V2` is parsed
-  as `2.0.0`. Declare mappings with `version = "1"` and `version = "2"`.
-- Deprecation headers: `StandardApiVersionDeprecationHandler`
-  (`org.springframework.web.accept`), `configureVersion("1")`.
-- Map Spring's `InvalidApiVersionException`, not a class of your own with the
-  same name.
+- Declare mappings with `version = "1"` and `version = "2"`.
 - springdoc: V1 and V2 share the **same paths**, so `pathsToMatch` cannot
   separate them. Use `addOpenApiMethodFilter` (inspect the mapping's
   `version`) and `addOpenApiCustomizer` (set the title). Reference:
   <https://springdoc.org/#groups>
+
+</details>
 
 ---
 
@@ -853,8 +842,6 @@ ListingServiceImpl ──> GeocodingPort (interface, yours) ──> NominatimGeo
    → Geocoding enriches the listing; it is not a condition for saving it. Its
    failure must not fail the update. The WARN is the only trace for the
    operator.
-4. **Rebuild** and restart.
-
 ### Expected behavior
 
 | Situation | Status | Coordinates | Log |
@@ -872,7 +859,8 @@ ListingServiceImpl ──> GeocodingPort (interface, yours) ──> NominatimGeo
 - [ ] V2 `PUT` with a Paris address → **200**, `psql` shows non-null coordinates ([`docs/verification.md` §11](docs/verification.md))
 - [ ] With `LISTINGS_GEO_ENDPOINT` pointing to an unreachable address: same `PUT` → **200** in less than 4 s (`curl -w %{time_total}`), `NULL` coordinates, one WARN in `docker compose logs listings-api`
 
-### If you are stuck
+<details>
+<summary><strong>If you are stuck</strong></summary>
 
 - `RestClient.builder()` with a `SimpleClientHttpRequestFactory`
   (`setConnectTimeout`, `setReadTimeout`). Reference:
@@ -881,6 +869,8 @@ ListingServiceImpl ──> GeocodingPort (interface, yours) ──> NominatimGeo
 - Catch `RestClientException` around the call.
 - Optional extension: retry failed enrichments later (retry with backoff, a
   re-sync endpoint, or a pending queue). Document the choice in the README.
+
+</details>
 
 ---
 
@@ -905,8 +895,6 @@ and alerts on it.
    listing is saved.
    → Counting after the save counts listings that exist, not attempts that
    failed.
-3. **Rebuild** and restart. The tag `application=listings` is already
-   configured (`management.metrics.tags.application`).
 
 ### Expected behavior
 
@@ -915,15 +903,15 @@ and alerts on it.
 - Each **201** on `POST /listings` (V1 or V2) adds 1. A 401, 422, or 400 adds
   nothing.
 - The metric lists the tag `application` with the value `listings` in
-  `availableTags`.
+  `availableTags` (already configured: `management.metrics.tags.application`).
 
 ### Verify
 
-- [ ] After a restart, `/actuator/metrics/listings.creations` → **200**, `measurements[0].value` is `0.0` ([`docs/verification.md` §12](docs/verification.md))
-- [ ] One valid `POST` → value +1; one invalid `POST` (422) → unchanged
-- [ ] `availableTags` contains `{"tag":"application","values":["listings"]}`
+- [ ] [`docs/verification.md` §12](docs/verification.md): every result matches *Expected behavior*
+- [ ] After a restart, the value is `0.0` (the counter exists before the first creation)
 
-### If you are stuck
+<details>
+<summary><strong>If you are stuck</strong></summary>
 
 - `Counter.builder(...).register(registry)` in the constructor.
 - Why `listings.creations` and not `listings.created`: in the Prometheus
@@ -931,6 +919,8 @@ and alerts on it.
   it, and `listings.created` would be published as `listings_total`.
 - Reference:
   <https://docs.spring.io/spring-boot/4.1/reference/actuator/metrics.html>
+
+</details>
 
 ---
 
@@ -959,7 +949,7 @@ choose, and justify, where a computation runs (Java or SQL).
    → The feature belongs to the V2 contract. If V1 silently ignored the
    parameters, it would return the whole list and mislead the client.
 4. **Add** to `GlobalExceptionHandler` — **400** handlers for the parameter
-   exceptions of the *Error handling* table.
+   exceptions of Appendix C.
    → Without them the catch-all returns 500.
 
 **B. Search**
@@ -991,13 +981,16 @@ choose, and justify, where a computation runs (Java or SQL).
 - [ ] Every item of the 200 response has `latitude` and `longitude` (V2 owner) or comes from a listing that has them (`psql`)
 - [ ] The README contains a paragraph justifying the approach
 
-### If you are stuck
+<details>
+<summary><strong>If you are stuck</strong></summary>
 
 - Haversine distance: `2 R asin(sqrt(sin²(Δφ/2) + cos φ1 cos φ2 sin²(Δλ/2)))`,
   `R = 6371` km. PostGIS is not required.
 - `radius=0.5` on an `Integer` parameter raises
   `MethodArgumentTypeMismatchException`; `@Min` / `@DecimalMax` on parameters
   raise `HandlerMethodValidationException`.
+
+</details>
 
 ---
 
@@ -1028,20 +1021,23 @@ scratch.
 ### Final checks
 
 - [ ] `mvn clean verify` → `BUILD SUCCESS` ([`docs/verification.md` §14](docs/verification.md))
-- [ ] Every core step's `Verify` (1, 2, 3, 5, 6, 8) is green on a fresh database
+- [ ] Every core step's `Verify` (1, 2a, 2b, 3, 5, 6a, 6b, 8) is green on a fresh database
 - [ ] Every bonus step you attempted has its `Verify` green
 - [ ] `grep -rnE "TODO|Not implemented|UnsupportedOperationException" src/main/java` → no output
 - [ ] `psql` `\dt` → `app_user`, `listing`, `databasechangelog`, `databasechangeloglock`
 - [ ] `docker compose logs listings-api | grep -E " ERROR "` → no output since the last boot
 - [ ] The README covers the points of Build it, item 2
 
-### If you are stuck
+<details>
+<summary><strong>If you are stuck</strong></summary>
 
 - `mvn clean verify` needs a PostgreSQL on `localhost:5435`, and a JDK 27 on
   the host. Without one, use the container command in
   [`README.md`, "Build & test"](README.md).
 - A changeSet edited after it was applied blocks the start on a non-empty
   database (`checksum` error) but passes on a fresh one: test both.
+
+</details>
 
 ---
 
@@ -1091,3 +1087,22 @@ Free public geocoder (OpenStreetMap), used in Step 7.
 
 The `pom.xml` block to paste is in [`README.md`](README.md). It is the only
 dependency the exercise asks you to add.
+
+## Appendix C — Status codes
+
+Every status of the `Expected behavior` tables, the exception behind it, and
+who maps it. Each response carries the JSON error body of *Conventions*.
+
+| Status | Trigger | Mechanism | Where |
+|---|---|---|---|
+| 400 | Malformed JSON body, unknown enum value (Step 2a) | `HttpMessageNotReadableException` | you add it |
+| 400 | Unknown API version, e.g. `?version=V99` (Step 6a) | Spring's `org.springframework.web.accept.InvalidApiVersionException` | you add it |
+| 400 | Missing or invalid distance parameters (Step 9) | `MissingServletRequestParameterException`, `MethodArgumentTypeMismatchException`, `HandlerMethodValidationException` | you add it |
+| 401 | Missing or invalid Basic credentials | Spring Security (the request never reaches your controller) | provided |
+| 403 | Authenticated non-owner `PUT` / `DELETE` (Step 3) | `org.springframework.security.access.AccessDeniedException` | you add it |
+| 404 | Unknown listing; hidden listing read by a non-owner (Steps 2a-3) | your `ResourceNotFoundException` (`com.app.listings.domain.exception`) | you add it |
+| 406 | `Accept` type not supported, e.g. `text/csv` (Step 4) | `HttpMediaTypeNotAcceptableException` | you add it |
+| 409 | Email already registered (Step 1) | `EmailAlreadyExistsException` | provided |
+| 415 | `Content-Type` not supported, e.g. `application/octet-stream` (Step 4) | `HttpMediaTypeNotSupportedException` | you add it |
+| 422 | DTO validation errors, with a `fields` map (Steps 1-2a) | `MethodArgumentNotValidException` | provided |
+| 500 | Unexpected error | catch-all `@ExceptionHandler(Exception.class)` | provided |

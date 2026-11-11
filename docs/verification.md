@@ -76,7 +76,9 @@ curl -s -u "$ALICE" "$API/auth/me"; echo
 sql "SELECT email, left(password_hash, 7) AS hash_prefix, role FROM app_user ORDER BY id"
 ```
 
-## 6) Step 2 — CRUD (V1)
+## 6) Steps 2a-2b — CRUD (V1)
+
+### 6a) Step 2a — create and read
 
 ```bash
 # create two listings, keep their ids
@@ -90,25 +92,8 @@ echo "BIKE=$BIKE LAMP=$LAMP"
 curl -s -i -u "$ALICE" -X POST "$API/listings" -H "$JSON" \
   -d '{"title":"Desk","price":80,"category":"FURNITURE"}' | grep -iE '^HTTP|^Location'
 
-# page shape: page.size = 2, page.totalElements = all listings
-curl -s -u "$ALICE" "$API/listings?page=0&size=2" | python3 -c '
-import sys, json; d = json.load(sys.stdin)
-print("items =", len(d["content"]), "| page =", d["page"])'
-
-# filters: the bike matches, nothing under 100 in SPORTS
-curl -s -u "$ALICE" "$API/listings?category=SPORTS&maxPrice=400" | python3 -c '
-import sys, json; print([i["title"] for i in json.load(sys.stdin)["content"]])'
-curl -s -u "$ALICE" "$API/listings?category=SPORTS&maxPrice=100" | python3 -c '
-import sys, json; print([i["title"] for i in json.load(sys.stdin)["content"]])'
-
 # 404 unknown
 curl -s -u "$ALICE" -w "\n-> %{http_code}\n" "$API/listings/999999"
-
-# PUT 200, DELETE 204, then 404
-curl -s -u "$ALICE" -X PUT "$API/listings/$LAMP" -H "$JSON" \
-  -d '{"title":"Desk lamp","price":30,"category":"HOUSEHOLD"}'; echo
-code -u "$ALICE" -X DELETE "$API/listings/$LAMP"
-code -u "$ALICE" "$API/listings/$LAMP"
 
 # 422: title too long + negative price
 curl -s -u "$ALICE" -X POST "$API/listings" -H "$JSON" \
@@ -122,6 +107,27 @@ curl -s -u "$ALICE" -X POST "$API/listings" -H "$JSON" \
 # schema
 sql "SELECT id, filename FROM databasechangelog ORDER BY orderexecuted"
 sql '\d listing'
+```
+
+### 6b) Step 2b — list, update, delete
+
+```bash
+# page shape: page.size = 2, page.totalElements = all listings
+curl -s -u "$ALICE" "$API/listings?page=0&size=2" | python3 -c '
+import sys, json; d = json.load(sys.stdin)
+print("items =", len(d["content"]), "| page =", d["page"])'
+
+# filters: the bike matches, nothing under 100 in SPORTS
+curl -s -u "$ALICE" "$API/listings?category=SPORTS&maxPrice=400" | python3 -c '
+import sys, json; print([i["title"] for i in json.load(sys.stdin)["content"]])'
+curl -s -u "$ALICE" "$API/listings?category=SPORTS&maxPrice=100" | python3 -c '
+import sys, json; print([i["title"] for i in json.load(sys.stdin)["content"]])'
+
+# PUT 200, DELETE 204, then 404
+curl -s -u "$ALICE" -X PUT "$API/listings/$LAMP" -H "$JSON" \
+  -d '{"title":"Desk lamp","price":30,"category":"HOUSEHOLD"}'; echo
+code -u "$ALICE" -X DELETE "$API/listings/$LAMP"
+code -u "$ALICE" "$API/listings/$LAMP"
 ```
 
 ## 7) Step 3 — access rules
@@ -204,12 +210,28 @@ curl -s "$API/listings/$BIKE"; echo
 
 Then replay §6 and §7: same results.
 
-## 10) Step 6 — versioning V1 + V2
+## 10) Steps 6a-6b — versioning V1 + V2
+
+### 10a) Step 6a — routing and deprecation
 
 ```bash
 # default = V1 = ?version=V1
 diff <(curl -s "$API/listings/$BIKE") <(curl -s "$API/listings/$BIKE?version=V1") && echo "ok: same body"
 
+# headers: present on V1, absent on V2
+curl -sI "$API/listings"            | grep -iE '^(Deprecation|Sunset)'
+curl -sI "$API/listings?version=V2" | grep -iE '^(Deprecation|Sunset)' || echo "ok: none on V2"
+
+# lower-case and numeric values
+for v in v1 1 v2 2; do echo "$v -> $(code "$API/listings?version=$v")"; done
+
+# 400 on unknown version
+curl -s -w "\n-> %{http_code}\n" "$API/listings?version=V99"
+```
+
+### 10b) Step 6b — the V2 contract
+
+```bash
 # alice writes V2 fields
 curl -s -u "$ALICE" -X PUT "$API/listings/$BIKE?version=V2" -H "$JSON" \
   -d '{"title":"Bike","price":350,"category":"SPORTS","negotiable":true,
@@ -226,16 +248,6 @@ echo "V2 alice:"; curl -s -u "$ALICE" "$API/listings/$BIKE?version=V2" | show
 curl -s -o /dev/null -u "$ALICE" -X PUT "$API/listings/$BIKE?version=V1" -H "$JSON" \
   -d '{"title":"Bike","price":340,"category":"SPORTS"}'
 curl -s -u "$ALICE" "$API/listings/$BIKE?version=V2" | field streetAddress
-
-# headers: present on V1, absent on V2
-curl -sI "$API/listings"            | grep -iE '^(Deprecation|Sunset)'
-curl -sI "$API/listings?version=V2" | grep -iE '^(Deprecation|Sunset)' || echo "ok: none on V2"
-
-# lower-case and numeric values
-for v in v1 1 v2 2; do echo "$v -> $(code "$API/listings?version=$v")"; done
-
-# 400 on unknown version
-curl -s -w "\n-> %{http_code}\n" "$API/listings?version=V99"
 
 # two OpenAPI documents
 for g in listings-v1 listings-v2; do
@@ -332,12 +344,12 @@ docker compose down -v       # wipe the database volume
 | Symptom | Cause | Fix |
 |---|---|---|
 | `500` with `Not implemented yet` | the endpoint is still a stub | implement it (the step that owns it) |
-| `500` where a `4xx` is expected | the exception reached the catch-all `@ExceptionHandler(Exception.class)` | add the specific handler (exercise, *Error handling*) |
+| `500` where a `4xx` is expected | the exception reached the catch-all `@ExceptionHandler(Exception.class)` | add the specific handler (exercise, Appendix C) |
 | `401` on `GET /listings` | public reads not permitted yet | Step 3 |
 | `403` on your own `PUT` | owner check compares the wrong ids | compare `listing.owner.id` with the caller's `User.id`, not the email |
 | Liquibase `checksum` error at boot | an applied changeSet was edited | revert it; put the change in a new changeSet |
-| `?version=V2` returns V1 fields | the V2 mapping is missing or not versioned | Step 6, `version = "2"` |
-| `?version=V99` returns 500 | `InvalidApiVersionException` not mapped | Step 6, Build it, item 6 |
+| `?version=V2` returns V1 fields | the V2 mapping is missing or not versioned | Step 6b, `version = "2"` |
+| `?version=V99` returns 500 | `InvalidApiVersionException` not mapped | Step 6a, item 3 |
 | `/actuator/metrics/listings.creations` is 404 | counter created lazily | register it in the constructor (Step 8) |
 | XML request answered with 415 | XML dependency missing, or Jackson 2 groupId | Step 4, `tools.jackson.dataformat` |
 | Java change not visible | image not rebuilt | `docker compose up -d --build listings-api` |

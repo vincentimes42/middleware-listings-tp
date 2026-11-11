@@ -24,12 +24,21 @@ to run it:
 Mode 1 is the default path and the one the TP2s build on. Use mode 2 when you
 want your IDE's debugger attached to the app.
 
+### Operating system and shell
+
+All commands are **Bash on Linux**: a Linux distribution, or **WSL2** on
+Windows (Ubuntu or Debian, Docker Desktop with WSL integration, repos cloned
+in `~/`). PowerShell, cmd and Git Bash are not supported.
+
 ### Install — mode 1 (Docker Compose)
 
+Skip the Docker lines with Docker Desktop (WSL integration): Docker comes from
+Windows.
+
 ```bash
-# Debian / Ubuntu
 sudo apt update
-sudo apt install -y docker.io docker-compose-plugin
+sudo apt install -y python3 curl docker.io docker-compose-v2   # Ubuntu
+sudo apt install -y python3 curl docker.io docker-compose      # Debian
 sudo systemctl enable --now docker
 sudo usermod -aG docker $USER        # then log out and in again
 
@@ -40,15 +49,16 @@ No Java and no Maven are needed on the host in this mode.
 
 ### Install — mode 2 (Maven on the host)
 
-```bash
-sudo apt install -y openjdk-27-jdk maven     # Debian / Ubuntu
-java -version                                # expect 27.x
-mvn -version                                 # expect 3.9+
-```
+No distribution packages JDK 27, and Ubuntu 24.04 ships Maven 3.8. Use
+SDKMAN (<https://sdkman.io>):
 
-If your distribution has no OpenJDK 27 package, use SDKMAN
-(`sdk install java 27.0.1-tem`). Pick **one** JDK source and set `JAVA_HOME`
-accordingly.
+```bash
+sdk list java | grep -- '-tem'      # pick the 27.x Temurin identifier
+sdk install java <27.x-tem>
+sdk install maven
+java -version                       # expect 27.x
+mvn -version                        # expect 3.9+
+```
 
 ### IDE setup (either mode)
 
@@ -141,6 +151,7 @@ springboot/
 ├── README.md                          # this file: install / run / build
 ├── exercise.md                        # the statement (Steps 1-10)
 ├── docs/verification.md               # copy-pasteable checks, one section per step
+├── docs/primer.md                     # Maven, Spring Boot, doc versions, test strategy
 ├── pom.xml                            # Boot 4.1.1, Java 27, PostgreSQL, Liquibase, springdoc
 ├── Dockerfile                         # multi-stage: JDK 27 + Maven -> JRE 27
 ├── docker-compose.yml                 # API (8080) + PostgreSQL (5435) on the `middleware` network
@@ -204,7 +215,7 @@ The PostgreSQL schema is managed by **Liquibase**, not by Hibernate
 |---|---|---|
 | `v1.0-init.yaml` | provided | `app_user.id`, `listing.id` |
 | `v1.0.1-identity.yaml` | provided | `email`, `username`, `password_hash`, `role`, `registration_date` on `app_user` |
-| `v1.0.2-listing.yaml` | you, Step 2 | V1 columns of `listing` |
+| `v1.0.2-listing.yaml` | you, Step 2a | V1 columns of `listing` |
 | `v1.1-v2-fields.yaml` | you, Step 5 | V2 columns of `listing` |
 
 Rules:

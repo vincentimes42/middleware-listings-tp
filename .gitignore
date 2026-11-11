@@ -1,32 +1,41 @@
-# --- Java / Javac ---
+# ------------------------------------------------------------------
+#  TP1 Spring Boot (the app every later TP extends) — .gitignore
+# ------------------------------------------------------------------
+
+# --- Java / Maven ---
+target/
+bin/
 *.class
 *.jar
-!/.mvn/wrapper/*.jar
-
-# --- Maven ---
-target/
 !.mvn/wrapper/maven-wrapper.jar
+
+# --- Local runtime ---
+# PostgreSQL data lives on a named docker volume, the log file on
+# `middleware-logs`; nothing of either belongs in the tree.
+logs/
+*.db
+*.sqlite
+*.sqlite3
+
+# --- Secrets and local env (the Gemini key lives in the shell only) ---
+.env
+.env.*
+*.env
+*.local
 
 # --- IDE ---
 .idea/
 *.iml
+*.ipr
+*.iws
 .vscode/
 .classpath
 .project
 .settings/
 .factorypath
-bin/
 
-# --- Local runtime ---
-# PostgreSQL data lives in a named docker volume (not in the repo).
-logs/
+# --- Logs and ad-hoc shell-redirect output (e.g. `... 2> err.txt`) ---
 *.log
-# any legacy local database files
-*.db
-*.sqlite
-*.sqlite3
-
-# --- Ad-hoc scratch / shell-redirect output (e.g. `mvn ... 2> err.txt`) ---
 /err*.txt
 /out*.txt
 

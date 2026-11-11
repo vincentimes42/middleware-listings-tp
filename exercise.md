@@ -886,8 +886,8 @@ ListingServiceImpl ──> GeocodingPort (interface, yours) ──> NominatimGeo
 
 ## Step 8 - Metrics   CORE
 
-**Outcome** — The Micrometer counter `listings.created` is readable at
-`/actuator/metrics/listings.created` from startup and increases by 1 on every
+**Outcome** — The Micrometer counter `listings.creations` is readable at
+`/actuator/metrics/listings.creations` from startup and increases by 1 on every
 successful listing creation.
 
 **Why this step** — Logs tell you what happened to one request; metrics tell
@@ -898,7 +898,7 @@ and alerts on it.
 ### Build it
 
 1. **Modify** `ListingServiceImpl` — inject `MeterRegistry` and register the
-   counter `listings.created` once, at construction.
+   counter `listings.creations` once, at construction.
    → A counter created on first use does not exist before the first creation:
    the endpoint returns 404 and a dashboard shows no series.
 2. **Modify** `ListingServiceImpl#create` — increment the counter after the
@@ -910,7 +910,7 @@ and alerts on it.
 
 ### Expected behavior
 
-- Right after startup, `GET /actuator/metrics/listings.created` → **200**,
+- Right after startup, `GET /actuator/metrics/listings.creations` → **200**,
   value `0.0`.
 - Each **201** on `POST /listings` (V1 or V2) adds 1. A 401, 422, or 400 adds
   nothing.
@@ -919,13 +919,16 @@ and alerts on it.
 
 ### Verify
 
-- [ ] After a restart, `/actuator/metrics/listings.created` → **200**, `measurements[0].value` is `0.0` ([`docs/verification.md` §12](docs/verification.md))
+- [ ] After a restart, `/actuator/metrics/listings.creations` → **200**, `measurements[0].value` is `0.0` ([`docs/verification.md` §12](docs/verification.md))
 - [ ] One valid `POST` → value +1; one invalid `POST` (422) → unchanged
 - [ ] `availableTags` contains `{"tag":"application","values":["listings"]}`
 
 ### If you are stuck
 
 - `Counter.builder(...).register(registry)` in the constructor.
+- Why `listings.creations` and not `listings.created`: in the Prometheus
+  format (Monitoring TP), `_created` is a reserved suffix. Micrometer strips
+  it, and `listings.created` would be published as `listings_total`.
 - Reference:
   <https://docs.spring.io/spring-boot/4.1/reference/actuator/metrics.html>
 

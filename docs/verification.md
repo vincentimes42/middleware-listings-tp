@@ -271,12 +271,12 @@ sql "SELECT latitude, longitude FROM listing WHERE id = $BIKE"   # NULL, NULL
 ## 12) Step 8 — metrics
 
 ```bash
-metric() { curl -s "$API/actuator/metrics/listings.created" | python3 -c '
+metric() { curl -s "$API/actuator/metrics/listings.creations" | python3 -c '
 import sys, json; d = json.load(sys.stdin); print(d["measurements"][0]["value"], d["availableTags"])'; }
 
 # after a restart: 200, value 0.0
 (cd "$TP1_DIR" && docker compose restart listings-api) && sleep 20
-code "$API/actuator/metrics/listings.created"
+code "$API/actuator/metrics/listings.creations"
 metric
 
 # one 201 -> +1, one 422 -> unchanged
@@ -338,6 +338,6 @@ docker compose down -v       # wipe the database volume
 | Liquibase `checksum` error at boot | an applied changeSet was edited | revert it; put the change in a new changeSet |
 | `?version=V2` returns V1 fields | the V2 mapping is missing or not versioned | Step 6, `version = "2"` |
 | `?version=V99` returns 500 | `InvalidApiVersionException` not mapped | Step 6, Build it, item 6 |
-| `/actuator/metrics/listings.created` is 404 | counter created lazily | register it in the constructor (Step 8) |
+| `/actuator/metrics/listings.creations` is 404 | counter created lazily | register it in the constructor (Step 8) |
 | XML request answered with 415 | XML dependency missing, or Jackson 2 groupId | Step 4, `tools.jackson.dataformat` |
 | Java change not visible | image not rebuilt | `docker compose up -d --build listings-api` |

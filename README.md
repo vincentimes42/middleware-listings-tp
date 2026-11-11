@@ -274,7 +274,7 @@ Then rebuild (`docker compose up -d --build listings-api`).
 5. **Schema evolution** — `v1.1` changelog, 7 V2 columns.
 6. **Versioning** — `?version=V1|V2`, default V1, deprecation headers, V2
    visibility, two OpenAPI groups.
-8. **Metrics** — counter `listings.created`.
+8. **Metrics** — counter `listings.creations`.
 
 **Bonus** (start only when the core is green)
 

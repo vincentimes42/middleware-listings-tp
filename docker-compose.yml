@@ -17,7 +17,7 @@
 #  content") and sketched in the commented blocks at the bottom:
 #       * Keycloak   -> issuer/JWKS env (Keycloak itself moves to host 8081;
 #                       the API stays on 8080)   (see ../keycloak/README.md "Run")
-#       * Monitoring -> app OTLP env (logs already shared via LOG_FILE +
+#       * Monitoring -> app OTEL_* env (logs already shared via LOGGING_FILE_NAME +
 #                       listings-logs volume)            (see ../monitoring/README.md "Run")
 #
 #  Run (TP1)     : docker compose up -d
@@ -37,7 +37,7 @@ volumes:
   listings-pgdata:
   listings-logs:
     name: middleware-logs   # explicit global name so the Monitoring TP's
-                            # Promtail (a separate compose project) mounts the SAME volume
+                            # Alloy (a separate compose project) mounts the SAME volume
 
 services:
 
@@ -90,9 +90,10 @@ services:
       SPRING_DATASOURCE_URL: "jdbc:postgresql://listings-postgres:5432/listings"
       SPRING_DATASOURCE_USERNAME: "listings"
       SPRING_DATASOURCE_PASSWORD: "listings"
-      # Monitoring TP (TP3): the app writes one shared log file here;
-      # harmless when the Monitoring TP is not active.
-      LOG_FILE: "/listings-logs/listings.log"
+      # Monitoring TP: Spring Boot writes its log to this file (logging.file.name)
+      # on the shared volume, which Alloy (Monitoring TP) tails. Harmless for the other TPs.
+      # (LOG_FILE would NOT work: Spring Boot reads LOGGING_FILE_NAME.)
+      LOGGING_FILE_NAME: "/listings-logs/listings.log"
     ports:
       # Host 8080 for every TP (TP1, Keycloak, Monitoring — no collision:
       # Keycloak moves to host 8081, see ../keycloak/docker-compose.yml).
@@ -123,10 +124,14 @@ services:
 #        SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_JWK_SET_URI: "http://keycloak:8080/realms/listings/protocol/openid-connect/certs"
 #      (Keycloak is on host 8081, see ../keycloak/README.md "Run".)
 #
-#  --- TP3 (Monitoring) — in `listings-api` above, the LOG_FILE env and the
-#        listings-logs volume already exist; the app just needs to push
-#        OTLP to the network name `otel-collector` (see
-#        ../monitoring/README.md "Run"). No port change (host 8080).
+#  --- TP (Monitoring) — in `listings-api` above, the LOGGING_FILE_NAME env
+#        and the listings-logs volume already exist; add the four OTEL_* env
+#        variables (OTLP over HTTP to `otel-collector:4318`, see
+#        ../monitoring/README.md "Run" §0). No port change (host 8080).
+#
+#  --- TP (IA) — bonus Step 5 only: in `listings-api` above, add to `environment`:
+#        GEMINI_API_KEY: ${GEMINI_API_KEY:-}   # forwarded from your shell, never stored here
+#      (see ../IA/README.md "Run" §0).
 #
 #  --- TP (Messaging) — in `listings-api` above, add to `environment`:
 #        RABBITMQ_HOST: "rabbitmq"          # the broker, by NETWORK NAME (from inside the container)

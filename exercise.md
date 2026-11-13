@@ -136,11 +136,13 @@ it on the first pass and come back to it once the core is green.
 - Monetary amounts are decimals with 2 digits (`350.00`).
 - Error responses are JSON:
   `{ "timestamp": "...", "status": 4xx, "error": "...", "message": "..." }`,
-  plus a `fields` map for validation errors. Every status and the exception
-  behind it: [Appendix C](#appendix-c--status-codes).
+  plus a `fields` map for validation and parameter errors. One exception:
+  the unknown-version 400 of Step 6a has its own exact body. Every status and
+  the exception behind it: [Appendix C](#appendix-c--status-codes).
 - **Catch-all handler:** the provided `GlobalExceptionHandler` maps any
   exception without a more specific handler, framework 4xx included, to
-  **500**. Each step names the handler to add for its 4xx.
+  **500**. Each step names the handler to add for its 4xx. The 404 (unknown
+  path) and 405 (unsupported method) handlers are provided.
 - Content type: `application/json` by default; `application/xml` is added in
   Step 4 (bonus).
 - API versions: `V1` and `V2`, selected with the query parameter
@@ -296,10 +298,12 @@ errors ──> GlobalExceptionHandler (group D)
    into a 404. Without it, the service can only return `null` or fail.
 7. **Implement** `ListingService` and `ListingServiceImpl` for `create` and
    `findById` — replace the `Object dto` parameters with your request DTO;
-   `create` sets the owner, `creationDate`, and `active = true`; an unknown id
-   → `ResourceNotFoundException`.
+   `create` sets the owner, `creationDate` (truncated to microseconds), and
+   `active = true`; an unknown id → `ResourceNotFoundException`.
    → Rules live in the service so that every endpoint, and V2 later, reuses
-   them. `Object dto` was only a placeholder.
+   them. `Object dto` was only a placeholder. A PostgreSQL `TIMESTAMP` keeps
+   microseconds: an untruncated `Instant.now()` (nanoseconds on Linux) makes
+   the `POST` body differ from the next `GET`.
 8. **Implement** in `web/controller/ListingController.java` — `POST /listings`
    and `GET /listings/{id}`, with a `@Valid` request body; resolve the
    caller's id with `UserService.findByEmail`.
@@ -321,7 +325,7 @@ errors ──> GlobalExceptionHandler (group D)
 
 | Method | Path | Success | Errors |
 |---|---|---|---|
-| POST | `/listings` | **201** + body + `Location: /listings/{id}` | 422, 400, 401 |
+| POST | `/listings` | **201** + body + `Location` (URL of `/listings/{id}`) | 422, 400, 401 |
 | GET | `/listings/{id}` | **200** | 404, 401 |
 
 - The V1 body contains exactly `id`, `title`, `description`, `price`,
@@ -333,7 +337,7 @@ errors ──> GlobalExceptionHandler (group D)
 
 ### Verify
 
-- [ ] [`docs/verification.md` §6a](docs/verification.md): every result matches *Expected behavior*
+- [ ] [`docs/verification.md` §6a](docs/verification.md): every result matches *Expected behavior*, `ok: same body` included
 - [ ] `"category":"NONSENSE"` → **400** + JSON body (not 500)
 - [ ] `psql`: `SELECT id FROM databasechangelog` lists `v1.0.2-…`; `\d listing` shows the 7 V1 columns
 
@@ -344,7 +348,9 @@ errors ──> GlobalExceptionHandler (group D)
   Never edit `v1.0-init.yaml` or `v1.0.1-identity.yaml`: they are already
   applied, and Liquibase refuses to start when an applied changeSet changes.
 - `@Enumerated(EnumType.STRING)` stores `SPORTS`, not `5`.
-- `ServletUriComponentsBuilder.fromCurrentRequest()` builds the `Location`.
+- `ServletUriComponentsBuilder.fromCurrentRequestUri()` builds the `Location`
+  (absolute URL, without the query string: `?version=` is not copied).
+- `Instant.now().truncatedTo(ChronoUnit.MICROS)`.
 
 </details>
 
@@ -420,7 +426,7 @@ can rely on.
 
 **Outcome** — Anyone reads active listings without an account; only the
 **owner** updates or deletes (others get **403**); a hidden listing is visible
-to its owner only.
+to its owner only, and reads and writes as **404** for everyone else.
 
 **Why this step** — Authentication answers *who are you*; authorization
 answers *what may you do*. They are checked in two different places, because
@@ -464,9 +470,10 @@ request ──> security chain ──────────> controller ──
    → Without it, the catch-all handler turns the 403 into a **500**.
 5. **Modify** the list and read paths (service + repository) — exclude
    `active = false` listings unless the caller is their owner; a hidden
-   listing read by a non-owner → `ResourceNotFoundException`.
+   listing read by a non-owner → `ResourceNotFoundException`. `update` and
+   `delete` load the listing through the same rule, before the owner check.
    → **404**, not 403: a non-owner must not even learn that the listing
-   exists.
+   exists, not even by trying to write it.
 6. **Modify** `ListingController` — accept an anonymous caller on `GET`
    (caller id = `null`).
    → The service needs to know there is no caller to apply item 5.
@@ -476,14 +483,15 @@ request ──> security chain ──────────> controller ──
 | Client | `GET /listings` | `GET /listings/{id}` active | `GET /listings/{id}` hidden | `POST` | `PUT` / `DELETE` own | `PUT` / `DELETE` other's |
 |---|---|---|---|---|---|---|
 | Anonymous | **200** | **200** | **404** | **401** | — | **401** |
-| bob (SELLER, not owner) | **200** | **200** | **404** | **201** | — | **403** |
+| bob (SELLER, not owner) | **200** | **200** | **404** | **201** | — | **403** (**404** if hidden) |
 | alice (SELLER, owner) | **200** | **200** | **200** | **201** | **200** / **204** | — |
 
 - The list returned to anonymous and to bob contains **no** hidden listing; the
   list returned to alice contains her hidden listings.
 - The owner check happens **after** authentication: an anonymous write is
   **401** (security chain), an authenticated non-owner write is **403**
-  (service), never the reverse.
+  (service), never the reverse. On a hidden listing the non-owner write is
+  **404**, like the read.
 - `/auth/register`, `/actuator/health`, `/actuator/info`, `/actuator/metrics`,
   `/v3/api-docs/**`, `/swagger-ui/**` stay public.
 - No response sets a `JSESSIONID` cookie.
@@ -491,7 +499,7 @@ request ──> security chain ──────────> controller ──
 ### Verify
 
 - [ ] [`docs/verification.md` §7](docs/verification.md) (matrix loop included): every cell matches *Expected behavior*
-- [ ] bob `PUT` on alice's listing → **403** (not 401, not 404, not 500)
+- [ ] bob `PUT` on alice's active listing → **403** (not 401, not 404, not 500); on her hidden listing → **404**
 - [ ] `curl -si -u alice@test.org:secret123 $API/auth/me | grep -i set-cookie` → no output
 
 <details>
@@ -546,8 +554,10 @@ no converter matches ──> 415 (Content-Type) or 406 (Accept) ──> GlobalEx
 2. **Add** to `GlobalExceptionHandler` — a **415** handler for
    `HttpMediaTypeNotSupportedException` and a **406** handler for
    `HttpMediaTypeNotAcceptableException`.
-   → Spring raises them when no converter matches; without a handler they
-   reach the catch-all and return 500.
+   → Spring raises them when no converter matches. Without a handler the 415
+   reaches the catch-all (500); the 406 does too, but the catch-all cannot
+   write its body in `text/csv` either, so Spring forwards to `/error` and an
+   anonymous client gets an unrelated **401**.
 3. **Modify** every handler of `GlobalExceptionHandler` — set the response
    content type to `application/json` explicitly.
    → Error bodies go through the same converters: an XML client would get
@@ -568,6 +578,9 @@ no converter matches ──> 415 (Content-Type) or 406 (Accept) ──> GlobalEx
 
 - Both formats carry the same field names and values; XML element names are
   the Java property names (`<title>`, `<price>`).
+- The XML root element is the class name (`<ListingResponseDto>`, `<PageImpl>`
+  for a page); the root name of a request is ignored (`<listing>` works). This
+  is expected: the DTOs stay unchanged (Appendix B).
 
 ### Verify
 
@@ -673,7 +686,8 @@ deprecation headers tell V1 clients, in a machine-readable way, when V1 ends.
    → It produces the `Deprecation` and `Sunset` headers; without it, V1
    clients get no warning before V1 is removed.
 3. **Add** to `GlobalExceptionHandler` — a **400** handler for Spring's
-   `InvalidApiVersionException` with the exact body below.
+   `InvalidApiVersionException` with exactly the body below (only these two
+   fields, unlike the other errors).
    → Without it the catch-all returns 500. The body tells the client which
    versions exist.
 
@@ -695,7 +709,7 @@ deprecation headers tell V1 clients, in a machine-readable way, when V1 ends.
 ### Verify
 
 - [ ] [`docs/verification.md` §10a](docs/verification.md): every result matches *Expected behavior*
-- [ ] `?version=V99` → **400** with the exact body above (not 500)
+- [ ] `?version=V99` → **400** with the exact body above, no other field (not 500)
 
 <details>
 <summary><strong>If you are stuck</strong></summary>
@@ -779,11 +793,15 @@ ListingService (same rules for both versions)
 | `negotiable` | — | ✓ | ✓ |
 | `active`, `streetAddress`, `city`, `postalCode`, `country`, `latitude`, `longitude` | — | — | ✓ |
 
-- V2 `POST` / `PUT` accept the V2 fields. A V1 `PUT` leaves them unchanged.
+- V2 `POST` / `PUT` accept the V2 fields. On a V2 `PUT`, a V2 field that is
+  absent (or `null`) keeps its stored value. A V1 `PUT` leaves every V2 field
+  unchanged.
 - Pagination, filters, ownership (403), and hidden listings (404) behave the
   same in V1 and V2.
 - `/v3/api-docs/listings-v1` and `/v3/api-docs/listings-v2` return two
   documents with distinct titles; each lists only its own version's operations.
+  The ungrouped `/v3/api-docs` merges both (V2 operations override V1 ones on
+  the same path): use the group URLs.
 
 ### Verify
 
@@ -806,9 +824,10 @@ ListingService (same rules for both versions)
 
 ## Step 7 - Geolocation (GPS enrichment)   BONUS
 
-**Outcome** — A V2 `PUT` with a `streetAddress` resolves `latitude` /
-`longitude` through Nominatim; when Nominatim fails or is slow, the update
-still succeeds within about 3 s, with null coordinates and a WARN log line.
+**Outcome** — A V2 `POST` or `PUT` with a `streetAddress` resolves
+`latitude` / `longitude` through Nominatim; when Nominatim fails or is slow,
+the write still succeeds within the timeouts, with null coordinates and a WARN
+log line.
 
 **Why this step** — Calling an external service makes your API depend on
 something you do not control. You learn to isolate that dependency behind an
@@ -835,8 +854,9 @@ ListingServiceImpl ──> GeocodingPort (interface, yours) ──> NominatimGeo
    call `GET /search?format=json&limit=1&q={address}` (Appendix A).
    → Without timeouts, a slow Nominatim blocks the request thread far beyond
    3 s. The `User-Agent` is required by Nominatim's usage policy.
-3. **Modify** `ListingServiceImpl` — on a V2 `PUT` with a non-blank
-   `streetAddress`, call the port and store the result; on failure or no
+3. **Modify** `ListingServiceImpl` — on a V2 `POST` or `PUT` with a non-blank
+   `streetAddress`, call the port and store the result (it replaces any
+   `latitude` / `longitude` sent in the same request); on failure or no
    result, log a WARN with the address and the reason, store `null`
    coordinates, continue.
    → Geocoding enriches the listing; it is not a condition for saving it. Its
@@ -846,18 +866,19 @@ ListingServiceImpl ──> GeocodingPort (interface, yours) ──> NominatimGeo
 
 | Situation | Status | Coordinates | Log |
 |---|---|---|---|
-| Address found by Nominatim | **200** | set | — |
-| Nominatim error, timeout, or empty result | **200** | `null` | one WARN with address and reason |
-| No `streetAddress` in the request | **200** | unchanged; no outbound call | — |
+| Address found by Nominatim | **200** / **201** | set | — |
+| Nominatim error, timeout, or empty result | **200** / **201** | `null` | one WARN with address and reason |
+| No `streetAddress` in the request | **200** / **201** | from the request (`PUT`: unchanged if absent); no outbound call | — |
 
-- A slow or unreachable Nominatim never delays the response by more than about
-  3 s (`timeout-ms: 3000`).
+- A Nominatim that accepts the connection and never answers delays the
+  response by about 3 s at most (read timeout, `timeout-ms: 3000`); an
+  unreachable one, by the connect timeout at most (3 s as well).
 
 ### Verify
 
 - [ ] `grep -n "Timeout" src/main/java/com/app/listings/infrastructure/geo/*.java` → connect and read timeouts set from the property
 - [ ] V2 `PUT` with a Paris address → **200**, `psql` shows non-null coordinates ([`docs/verification.md` §11](docs/verification.md))
-- [ ] With `LISTINGS_GEO_ENDPOINT` pointing to an unreachable address: same `PUT` → **200** in less than 4 s (`curl -w %{time_total}`), `NULL` coordinates, one WARN in `docker compose logs listings-api`
+- [ ] With `LISTINGS_GEO_ENDPOINT` pointing to a server that never answers (§11): same `PUT` → **200** in about 3 s, less than 4 s (`curl -w %{time_total}`), `NULL` coordinates, one WARN with `Read timed out` in `docker compose logs listings-api`
 
 <details>
 <summary><strong>If you are stuck</strong></summary>
@@ -939,13 +960,17 @@ choose, and justify, where a computation runs (Java or SQL).
 
 1. **Modify** the V2 list endpoint of `ListingController` — accept the
    optional parameters `lat`, `lng`, `radius`: all three → distance search;
-   none → the normal list; one or two → **400**.
+   none → the normal list; one or two → **400**, by throwing
+   `MissingServletRequestParameterException` for the first missing one.
    → A partial set is ambiguous (a point without a radius); rejecting it is
-   clearer than guessing.
+   clearer than guessing. Spring raises nothing by itself here: the
+   parameters are optional.
 2. **Validate** — `radius` is an integer ≥ 1, `lat` in [-90, 90], `lng` in
    [-180, 180].
    → Impossible coordinates are rejected before any computation.
-3. **Modify** the V1 list endpoint — any of the three parameters → **400**.
+3. **Modify** the V1 list endpoint — declare the three parameters and reject
+   any of them with **400** (e.g. `@Null`, which raises
+   `HandlerMethodValidationException`).
    → The feature belongs to the V2 contract. If V1 silently ignored the
    parameters, it would return the whole list and mislead the client.
 4. **Add** to `GlobalExceptionHandler` — **400** handlers for the parameter
@@ -987,8 +1012,10 @@ choose, and justify, where a computation runs (Java or SQL).
 - Haversine distance: `2 R asin(sqrt(sin²(Δφ/2) + cos φ1 cos φ2 sin²(Δλ/2)))`,
   `R = 6371` km. PostGIS is not required.
 - `radius=0.5` on an `Integer` parameter raises
-  `MethodArgumentTypeMismatchException`; `@Min` / `@DecimalMax` on parameters
-  raise `HandlerMethodValidationException`.
+  `MethodArgumentTypeMismatchException`; `@Min` / `@DecimalMax` / `@Null` on
+  parameters raise `HandlerMethodValidationException`.
+- `new MissingServletRequestParameterException("radius", "Integer")` builds
+  the "missing" case.
 
 </details>
 
@@ -1091,16 +1118,20 @@ dependency the exercise asks you to add.
 ## Appendix C — Status codes
 
 Every status of the `Expected behavior` tables, the exception behind it, and
-who maps it. Each response carries the JSON error body of *Conventions*.
+who maps it. Each response carries the JSON error body of *Conventions*,
+except the unknown-version 400 (exact body of Step 6a).
 
 | Status | Trigger | Mechanism | Where |
 |---|---|---|---|
 | 400 | Malformed JSON body, unknown enum value (Step 2a) | `HttpMessageNotReadableException` | you add it |
 | 400 | Unknown API version, e.g. `?version=V99` (Step 6a) | Spring's `org.springframework.web.accept.InvalidApiVersionException` | you add it |
-| 400 | Missing or invalid distance parameters (Step 9) | `MissingServletRequestParameterException`, `MethodArgumentTypeMismatchException`, `HandlerMethodValidationException` | you add it |
+| 400 | Incomplete distance parameters (Step 9) | `MissingServletRequestParameterException`, thrown by your controller | you add it |
+| 400 | Invalid distance parameters, or any of them in V1 (Step 9); non-numeric id such as `/listings/abc` | `MethodArgumentTypeMismatchException`, `HandlerMethodValidationException` | you add it |
 | 401 | Missing or invalid Basic credentials | Spring Security (the request never reaches your controller) | provided |
 | 403 | Authenticated non-owner `PUT` / `DELETE` (Step 3) | `org.springframework.security.access.AccessDeniedException` | you add it |
-| 404 | Unknown listing; hidden listing read by a non-owner (Steps 2a-3) | your `ResourceNotFoundException` (`com.app.listings.domain.exception`) | you add it |
+| 404 | Unknown listing; hidden listing read or written by a non-owner (Steps 2a-3) | your `ResourceNotFoundException` (`com.app.listings.domain.exception`) | you add it |
+| 404 | Unknown path (authenticated caller) | `NoResourceFoundException` | provided |
+| 405 | Unsupported method, e.g. `PATCH /listings/1` | `HttpRequestMethodNotSupportedException` | provided |
 | 406 | `Accept` type not supported, e.g. `text/csv` (Step 4) | `HttpMediaTypeNotAcceptableException` | you add it |
 | 409 | Email already registered (Step 1) | `EmailAlreadyExistsException` | provided |
 | 415 | `Content-Type` not supported, e.g. `application/octet-stream` (Step 4) | `HttpMediaTypeNotSupportedException` | you add it |

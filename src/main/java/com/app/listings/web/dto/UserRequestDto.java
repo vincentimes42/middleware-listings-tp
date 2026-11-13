@@ -21,7 +21,7 @@ public class UserRequestDto {
     private String email;
 
     @NotBlank(message = "username is required")
-    @Size(min = 1, max = 100)
+    @Size(max = 100)
     private String username;
 
     @NotBlank(message = "password is required")

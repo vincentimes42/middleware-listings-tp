@@ -30,6 +30,8 @@ code() { curl -s -o /dev/null -w "%{http_code}\n" "$@"; }
 sql()  { (cd "$TP1_DIR" && docker compose exec -T listings-postgres psql -U listings -d listings -c "$1"); }
 # read one field of a JSON body on stdin, e.g.  ... | field id
 field() { python3 -c "import sys,json; print(json.load(sys.stdin)$(printf '["%s"]' "$@"))"; }
+# wait until the API answers again (after a restart or a rebuild)
+waitup() { until curl -fsS "$API/actuator/health" >/dev/null 2>&1; do sleep 2; done; echo "up"; }
 ```
 
 ## 3) Start the stack
@@ -55,7 +57,7 @@ curl -s -X POST "$API/auth/register" -H "$JSON" \
 ## 5) Step 1 — user accounts
 
 ```bash
-# 201 (or 409 if §4 already ran): body has role SELLER, no password
+# 201 on the first run (409 when you replay this section): role SELLER, no password
 curl -s -i -X POST "$API/auth/register" -H "$JSON" \
   -d '{"email":"carol@test.org","username":"Carol","password":"secret123"}'; echo
 
@@ -88,6 +90,12 @@ LAMP=$(curl -s -u "$ALICE" -X POST "$API/listings" -H "$JSON" \
   -d '{"title":"Lamp","price":25,"category":"HOUSEHOLD"}' | field id)
 echo "BIKE=$BIKE LAMP=$LAMP"
 
+# checkpoint: the GET body equals the POST body (creationDate included)
+CHAIR=$(curl -s -u "$ALICE" -X POST "$API/listings" -H "$JSON" \
+  -d '{"title":"Chair","price":15,"category":"FURNITURE"}')
+diff <(echo "$CHAIR") <(curl -s -u "$ALICE" "$API/listings/$(echo "$CHAIR" | field id)"; echo) \
+  && echo "ok: same body"
+
 # 201 + Location header
 curl -s -i -u "$ALICE" -X POST "$API/listings" -H "$JSON" \
   -d '{"title":"Desk","price":80,"category":"FURNITURE"}' | grep -iE '^HTTP|^Location'
@@ -117,7 +125,7 @@ curl -s -u "$ALICE" "$API/listings?page=0&size=2" | python3 -c '
 import sys, json; d = json.load(sys.stdin)
 print("items =", len(d["content"]), "| page =", d["page"])'
 
-# filters: the bike matches, nothing under 100 in SPORTS
+# filters: only bikes (one more per replay of §6a), then an empty list
 curl -s -u "$ALICE" "$API/listings?category=SPORTS&maxPrice=400" | python3 -c '
 import sys, json; print([i["title"] for i in json.load(sys.stdin)["content"]])'
 curl -s -u "$ALICE" "$API/listings?category=SPORTS&maxPrice=100" | python3 -c '
@@ -161,6 +169,9 @@ import sys, json; print(any(i['id'] == $BIKE for i in json.load(sys.stdin)['cont
   echo "$who: in list=$IN_LIST  detail=$(code "${U[@]}" "$API/listings/$BIKE")"
 done
 # expected: anonymous False 404 | bob False 404 | alice True 200
+# a non-owner write on a hidden listing is 404 too (not 403: no leak)
+code -u "$BOB" -X PUT "$API/listings/$BIKE" -H "$JSON" -d '{"title":"x","price":1,"category":"OTHER"}'
+code -u "$BOB" -X DELETE "$API/listings/$BIKE"
 curl -s -o /dev/null -u "$ALICE" -X PUT "$API/listings/$BIKE" -H "$JSON" \
   -d '{"title":"Bike","price":350,"category":"SPORTS","active":true}'   # show it again
 
@@ -201,7 +212,7 @@ sql '\d listing'                                   # 7 new nullable columns
 sql "SELECT id, title, negotiable, latitude, longitude FROM listing ORDER BY id"
 sql "SELECT orderexecuted, id, filename FROM databasechangelog ORDER BY orderexecuted"
 # restart: no new row in databasechangelog
-(cd "$TP1_DIR" && docker compose restart listings-api) && sleep 20
+(cd "$TP1_DIR" && docker compose restart listings-api) && waitup
 sql "SELECT count(*) FROM databasechangelog"
 grep -n "v1.1-v2-fields" "$TP1_DIR/src/main/resources/db/changelog/db.changelog-master.yaml"
 # V1 unchanged: no negotiable key
@@ -218,9 +229,10 @@ Then replay §6 and §7: same results.
 # default = V1 = ?version=V1
 diff <(curl -s "$API/listings/$BIKE") <(curl -s "$API/listings/$BIKE?version=V1") && echo "ok: same body"
 
-# headers: present on V1, absent on V2
-curl -sI "$API/listings"            | grep -iE '^(Deprecation|Sunset)'
-curl -sI "$API/listings?version=V2" | grep -iE '^(Deprecation|Sunset)' || echo "ok: none on V2"
+# headers of a GET (not curl -I: HEAD is not a permitted method): present on V1, absent on V2
+curl -s -o /dev/null -D - "$API/listings"            | grep -iE '^(HTTP|Deprecation|Sunset)'
+curl -s -o /dev/null -D - "$API/listings?version=V2" | grep -iE '^(HTTP|Deprecation|Sunset)'
+# expected: HTTP 200 + Deprecation + Sunset, then HTTP 200 alone
 
 # lower-case and numeric values
 for v in v1 1 v2 2; do echo "$v -> $(code "$API/listings?version=$v")"; done
@@ -249,7 +261,7 @@ curl -s -o /dev/null -u "$ALICE" -X PUT "$API/listings/$BIKE?version=V1" -H "$JS
   -d '{"title":"Bike","price":340,"category":"SPORTS"}'
 curl -s -u "$ALICE" "$API/listings/$BIKE?version=V2" | field streetAddress
 
-# two OpenAPI documents
+# two OpenAPI documents (the ungrouped /v3/api-docs mixes both versions: do not use it here)
 for g in listings-v1 listings-v2; do
   curl -s "$API/v3/api-docs/$g" | python3 -c 'import sys, json; print(json.load(sys.stdin)["info"]["title"])'
 done
@@ -265,20 +277,31 @@ curl -s -u "$ALICE" -X PUT "$API/listings/$BIKE?version=V2" -H "$JSON" \
 sql "SELECT id, latitude, longitude FROM listing WHERE id = $BIKE"
 ```
 
-Failure path: point the geocoder to a non-routable address. In
-`docker-compose.yml`, add to `listings-api.environment` the line
-`LISTINGS_GEO_ENDPOINT: "http://10.255.255.1"`, then
-`docker compose up -d listings-api` (no rebuild needed). Remove the line
-afterwards.
+Failure path: point the geocoder to a server that accepts the connection and
+never answers, so that the **read timeout** is what ends the call (a
+non-routable address often fails at once and proves nothing about timeouts).
+
+```bash
+docker run -d --rm --name slow-geo --network middleware alpine:3.16.3 \
+  sh -c 'nc -lk -p 80 -e sleep 3600'
+```
+
+In `docker-compose.yml`, add to `listings-api.environment` the line
+`LISTINGS_GEO_ENDPOINT: "http://slow-geo"`, then
+`docker compose up -d listings-api && waitup` (no rebuild needed).
 
 ```bash
 curl -s -o /dev/null -w "HTTP %{http_code} in %{time_total}s\n" -u "$ALICE" \
   -X PUT "$API/listings/$BIKE?version=V2" -H "$JSON" \
   -d '{"title":"Bike","price":350,"category":"SPORTS","streetAddress":"10 Rue de Rivoli","city":"Paris"}'
-# expected: HTTP 200 in < 4 s
+# expected: HTTP 200 in about 3 s (the read timeout), < 4 s
 sql "SELECT latitude, longitude FROM listing WHERE id = $BIKE"   # NULL, NULL
-(cd "$TP1_DIR" && docker compose logs --since 2m listings-api | grep WARN | tail -3)
+(cd "$TP1_DIR" && docker compose logs --since 2m listings-api | grep WARN | tail -1)
+# expected: your WARN, naming the address and "Read timed out"
 ```
+
+Afterwards: remove the `LISTINGS_GEO_ENDPOINT` line,
+`docker compose up -d listings-api`, and `docker rm -f slow-geo`.
 
 ## 12) Step 8 — metrics
 
@@ -287,7 +310,7 @@ metric() { curl -s "$API/actuator/metrics/listings.creations" | python3 -c '
 import sys, json; d = json.load(sys.stdin); print(d["measurements"][0]["value"], d["availableTags"])'; }
 
 # after a restart: 200, value 0.0
-(cd "$TP1_DIR" && docker compose restart listings-api) && sleep 20
+(cd "$TP1_DIR" && docker compose restart listings-api) && waitup
 code "$API/actuator/metrics/listings.creations"
 metric
 
@@ -322,7 +345,7 @@ done
 
 ```bash
 cd "$TP1_DIR"
-docker compose down -v && docker compose up -d --build && sleep 30   # fresh database
+docker compose down -v && docker compose up -d --build && waitup   # fresh database
 mvn clean verify                     # or the container command in README "Build & test"
 grep -rnE "TODO|Not implemented|UnsupportedOperationException" src/main/java || echo "ok: no stub"
 sql '\dt'
@@ -349,6 +372,7 @@ docker compose down -v       # wipe the database volume
 | `403` on your own `PUT` | owner check compares the wrong ids | compare `listing.owner.id` with the caller's `User.id`, not the email |
 | Liquibase `checksum` error at boot | an applied changeSet was edited | revert it; put the change in a new changeSet |
 | `?version=V2` returns V1 fields | the V2 mapping is missing or not versioned | Step 6b, `version = "2"` |
+| `403` instead of `404` for bob on a hidden listing | the write path checks the owner before the visibility | load the listing with the read rule first (Step 3, item 5) |
 | `?version=V99` returns 500 | `InvalidApiVersionException` not mapped | Step 6a, item 3 |
 | `/actuator/metrics/listings.creations` is 404 | counter created lazily | register it in the constructor (Step 8) |
 | XML request answered with 415 | XML dependency missing, or Jackson 2 groupId | Step 4, `tools.jackson.dataformat` |

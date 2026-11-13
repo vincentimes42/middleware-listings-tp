@@ -110,7 +110,7 @@ The app reads `jdbc:postgresql://localhost:5435/listings` (user / password
 | <http://localhost:8080/actuator/health> | health check (JSON, `"status":"UP"`) |
 | <http://localhost:8080/actuator/info> | application info |
 | <http://localhost:8080/actuator/metrics> | list of metric names |
-| <http://localhost:8080/v3/api-docs> | OpenAPI document (JSON) |
+| <http://localhost:8080/v3/api-docs> | OpenAPI document (JSON); after Step 6b, use the groups `/v3/api-docs/listings-v1` and `/v3/api-docs/listings-v2` |
 | <http://localhost:8080/swagger-ui.html> | Swagger UI |
 | `localhost:5435` | PostgreSQL (db / user / password `listings`) |
 

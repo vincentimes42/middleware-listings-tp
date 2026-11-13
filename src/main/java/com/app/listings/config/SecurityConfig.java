@@ -7,15 +7,11 @@ import org.springframework.security.authentication.dao.DaoAuthenticationProvider
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.core.userdetails.User;
-import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
-import org.springframework.security.provisioning.InMemoryUserDetailsManager;
 import org.springframework.security.web.SecurityFilterChain;
-
-import java.util.List;
 
 /**
  * Basic security — PROVIDED skeleton (see exercise.md Step 1, hint).
@@ -26,8 +22,8 @@ import java.util.List;
  *  - a `PasswordEncoder` bean (BCrypt, per Step 1).
  *  - a `UserDetailsService` that loads by email from the `UserRepository`
  *    (via the provided `UserService`), so Basic auth already works:
- *    `curl -u alice@test:secret123 http://localhost:8080/auth/me` will
- *    return 401 until you have created `alice@test` and wired the controller.
+ *    `curl -u alice@test.org:secret123 http://localhost:8080/auth/me` will
+ *    return 401 until you have created `alice@test.org` and wired the controller.
  *    That's a good "does Security work?" smoke test the moment you start.
  *  - a `SecurityFilterChain` that exposes `/auth/register`,
  *    `/actuator/**`, `/v3/api-docs/**`, and `/swagger-ui/**` (public)

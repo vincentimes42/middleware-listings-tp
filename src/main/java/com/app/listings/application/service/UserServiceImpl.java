@@ -11,6 +11,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 
 /**
  * UserService implementation. PROVIDED (see exercise.md Step 1).
@@ -51,7 +52,7 @@ public class UserServiceImpl implements UserService {
                 .withUsername(request.getUsername())
                 .withPasswordHash(passwordEncoder.encode(request.getPassword()))
                 .withRole(Role.SELLER)
-                .withRegistrationDate(Instant.now());
+                .withRegistrationDate(Instant.now().truncatedTo(ChronoUnit.MICROS));
         return userRepository.save(user);
     }
 

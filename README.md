@@ -68,6 +68,17 @@ mvn -version                        # expect 3.9+
 - **VS Code** — "Extension Pack for Java"; point `java.jdt.ls.java.home` to a
   JDK 27.
 
+### Reading the diagrams
+
+The diagrams of [`exercise.md`](exercise.md) (and of the TP2 statements) are
+```` ```mermaid ```` blocks. GitHub renders them in its preview. If your editor shows
+the raw code instead of a diagram, enable Mermaid in its Markdown preview:
+
+- **IntelliJ IDEA** — `Settings → Languages & Frameworks → Markdown →
+  Markdown Extensions → Mermaid` (download it if prompted).
+- **VS Code** — install the extension "Markdown Preview Mermaid Support"
+  (`bierner.markdown-mermaid`), then open the preview (`Ctrl+Shift+V`).
+
 ---
 
 ## Run

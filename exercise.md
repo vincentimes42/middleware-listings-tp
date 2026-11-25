@@ -76,15 +76,26 @@ Everything you build sits on this domain. Each step below is one facet of it.
 
 ### Relationship
 
-`User` **1 —— 0..N** `Listing`. A listing belongs to exactly one seller, its
-**owner**; a seller can own many listings. The relation is the `owner`
-attribute of `Listing` (`@ManyToOne`), stored in the column `listing.user_id`.
+```mermaid
+erDiagram
+    User ||--o{ Listing : "owns (listing.user_id)"
+```
+
+The relation is the `owner` attribute of `Listing` (`@ManyToOne`).
 
 ### Lifecycle
 
-A listing is created with `active = true`. The owner can **hide** it
-(`active = false`) and show it again later. A hidden listing is excluded from
-lists for everyone except its owner, and reads as **404** for non-owners.
+```mermaid
+stateDiagram-v2
+    direction LR
+    [*] --> Active : POST
+    Active --> Hidden : owner sets active = false
+    Hidden --> Active : owner sets active = true
+    Active --> [*] : owner DELETE
+    Hidden --> [*] : owner DELETE
+    note right of Active : listed and readable by everyone
+    note right of Hidden : owner only, 404 for everyone else
+```
 
 > Keep these four ideas in mind (*actors, the two entities, the 1-to-N
 > ownership, the active lifecycle*): almost every `Expected behavior` below is
@@ -94,26 +105,21 @@ lists for everyone except its owner, and reads as **404** for non-owners.
 
 Every request crosses the same layers. Each step changes one or more of them.
 
+```mermaid
+flowchart TD
+    req(["HTTP request"])
+    sec["<b>security chain</b><br/>config/SecurityConfig<br/><i>who may call? (401)</i>"]
+    ctl["<b>controller</b><br/>web/controller/* · web/dto/*<br/><i>HTTP in/out: parameters, DTOs, status codes<br/>the JSON contract (what the client sends and sees)</i>"]
+    svc["<b>service</b><br/>application/service/*<br/><i>business rules: ownership, visibility, defaults</i>"]
+    repo["<b>repository</b><br/>domain/repository/* · domain/entity/*<br/><i>queries · Java view of the tables (JPA)</i>"]
+    db[("<b>database</b><br/>db/changelog/*.yaml<br/><i>the tables themselves (Liquibase)</i>")]
+    adv["<b>web/advice/GlobalExceptionHandler</b><br/><i>errors from any layer → JSON error + status</i>"]
+    req --> sec --> ctl --> svc --> repo --> db
+    sec & ctl & svc & repo -.-> adv
 ```
-HTTP request
-  │
-  ▼
-security chain    config/SecurityConfig            who may call? (401)
-  │
-  ▼
-controller        web/controller/*                 HTTP in/out: parameters, DTOs, status codes
-  │                web/dto/*                        the JSON contract (what the client sends and sees)
-  ▼
-service           application/service/*            business rules: ownership, visibility, defaults
-  │
-  ▼
-repository        domain/repository/*              queries
-  │                domain/entity/*                  Java view of the tables (JPA)
-  ▼
-database          db/changelog/*.yaml              the tables themselves (Liquibase)
 
-errors from any layer ──> web/advice/GlobalExceptionHandler ──> JSON error + status
-```
+In the *How it fits* diagrams of the steps, the highlighted boxes are the
+parts you write in that step; the others are provided or already built.
 
 ---
 
@@ -125,8 +131,31 @@ errors from any layer ──> web/advice/GlobalExceptionHandler ──> JSON err
 | **BONUS** (start only when the core `Verify` lists are green) | 4 (JSON + XML) · 7 (GPS enrichment) · 9 (distance search) | ~2h30 |
 | **DELIVERY** | 10 (final integration) | ~0h30 |
 
-Work the core steps **in order**. Step 4 is a bonus placed before Step 5: skip
-it on the first pass and come back to it once the core is green.
+```mermaid
+flowchart TD
+    subgraph core1["CORE, in order"]
+        direction LR
+        s1["1<br/>accounts"] --> s2a["2a<br/>create, read"] --> s2b["2b<br/>list, update"] --> s3["3<br/>access rules"]
+    end
+    subgraph core2[" "]
+        direction LR
+        s5["5<br/>V2 columns"] --> s6a["6a<br/>routing"] --> s6b["6b<br/>V2 contract"] --> s8["8<br/>metrics"]
+    end
+    subgraph bonus["BONUS"]
+        direction LR
+        s4["4<br/>JSON + XML"]
+        s7["7<br/>GPS"]
+        s9["9<br/>distance"]
+        s4 ~~~ s7 ~~~ s9
+    end
+    core1 --> core2 --> s10["10<br/>delivery"]
+    core2 -. "core green" .-> bonus -.-> s10
+    classDef bonusStep stroke-dasharray:4 3
+    class s4,s7,s9 bonusStep
+```
+
+Bonus steps keep their number (Step 4 sits between 3 and 5); skip them on
+the first pass.
 
 ---
 
@@ -168,11 +197,16 @@ an owner.
 
 ### How it fits
 
-```
-POST /auth/register ──> AuthController ──> UserService.register ──> UserRepository ──> app_user
-GET  /auth/me       ──> security chain ──> AuthController ──> UserService.findByEmail
-                        (checks Basic,     ▲
-                         provided)         └── the only part you write in this step
+```mermaid
+flowchart LR
+    reg(["POST /auth/register"]) --> ac
+    me(["GET /auth/me"]) --> sc["security chain<br/><i>checks Basic, provided</i>"] --> ac
+    ac["<b>AuthController</b><br/><i>the only part you write in this step</i>"]
+    ac -- "register" --> us["UserService"]
+    ac -- "findByEmail" --> us
+    us --> ur["UserRepository"] --> t[("app_user")]
+    classDef todo fill:#fde68a,stroke:#b45309,stroke-width:2px,color:#111
+    class ac todo
 ```
 
 ### Build it
@@ -243,13 +277,15 @@ adds rules to layers that already exist.
 
 ### How it fits
 
-```
-POST /listings ──> ListingController ──> ListingService ──> ListingRepository ──> listing table
-                   (group C)             (group C)          (provided)             (group A)
-                      │  ▲
-          ListingRequestDto  ListingResponseDto                 Listing entity
-                   (group B)                                    (group A)
-errors ──> GlobalExceptionHandler (group D)
+```mermaid
+flowchart LR
+    req(["POST /listings"]) --> ctl["<b>ListingController</b><br/>group C"] --> svc["<b>ListingService</b><br/>group C"] --> repo["ListingRepository<br/><i>provided</i>"] --> tbl[("<b>listing table</b><br/>group A")]
+    din["<b>ListingRequestDto</b><br/>group B"] -. "request body" .-> ctl
+    ctl -. "response body" .-> dout["<b>ListingResponseDto</b><br/>group B"]
+    repo --- ent["<b>Listing entity</b><br/>group A"]
+    svc -. "errors" .-> adv["<b>GlobalExceptionHandler</b><br/>group D"]
+    classDef todo fill:#fde68a,stroke:#b45309,stroke-width:2px,color:#111
+    class ctl,svc,tbl,din,dout,ent,adv todo
 ```
 
 ### Build it
@@ -434,13 +470,18 @@ the second one needs data (the listing's owner) that only the database has.
 
 ### How it fits
 
-```
-request ──> security chain ──────────> controller ──> service ──────────> repository
-            "may anyone call this?"                   "may THIS caller
-            no credentials -> 401                      touch THIS listing?"
-            (group A)                                  not owner -> 403
-                                                       hidden    -> 404
-                                                       (group B)
+```mermaid
+flowchart LR
+    req(["request"]) --> sc["<b>security chain</b> · group A<br/><i>may anyone call this?</i>"]
+    sc -- "no credentials" --> e401["401"]
+    sc --> ctl["controller"] --> svc["<b>service</b> · group B<br/><i>may THIS caller touch THIS listing?</i>"]
+    svc -- "hidden" --> e404["404"]
+    svc -- "not owner" --> e403["403"]
+    svc --> repo["repository"]
+    classDef todo fill:#fde68a,stroke:#b45309,stroke-width:2px,color:#111
+    classDef err fill:#fecaca,stroke:#b91c1c,color:#111
+    class sc,svc todo
+    class e401,e403,e404 err
 ```
 
 ### Build it
@@ -488,10 +529,21 @@ request ──> security chain ──────────> controller ──
 
 - The list returned to anonymous and to bob contains **no** hidden listing; the
   list returned to alice contains her hidden listings.
-- The owner check happens **after** authentication: an anonymous write is
-  **401** (security chain), an authenticated non-owner write is **403**
-  (service), never the reverse. On a hidden listing the non-owner write is
-  **404**, like the read.
+- A write is checked in this order; the first failing check gives the status:
+
+```mermaid
+flowchart LR
+    w(["PUT / DELETE<br/>/listings/{id}"]) --> a{"valid Basic<br/>credentials?"}
+    a -- "no" --> e401["401<br/><i>security chain</i>"]
+    a -- "yes" --> b{"listing exists and is<br/>visible to the caller?"}
+    b -- "no: unknown, or hidden<br/>and caller not owner" --> e404["404<br/><i>service</i>"]
+    b -- "yes" --> c{"caller is<br/>the owner?"}
+    c -- "no" --> e403["403<br/><i>service</i>"]
+    c -- "yes" --> ok["200 / 204"]
+    classDef err fill:#fecaca,stroke:#b91c1c,color:#111
+    class e401,e403,e404 err
+```
+
 - `/auth/register`, `/actuator/health`, `/actuator/info`, `/actuator/metrics`,
   `/v3/api-docs/**`, `/swagger-ui/**` stay public.
 - No response sets a `JSESSIONID` cookie.
@@ -529,11 +581,16 @@ consume the API without an adapter, and the controller code does not change.
 
 ### How it fits
 
-```
-request body ──> converter chosen by Content-Type ──> DTO ──> controller
-response     <── converter chosen by Accept       <── DTO <──
-                 (JSON today; XML after item 1)
-no converter matches ──> 415 (Content-Type) or 406 (Accept) ──> GlobalExceptionHandler
+```mermaid
+flowchart LR
+    body(["request body"]) --> cin["<b>converter</b><br/>chosen by Content-Type<br/><i>JSON; XML after item 1</i>"] --> ctl["DTO → controller → DTO"] --> cout["<b>converter</b><br/>chosen by Accept<br/><i>JSON; XML after item 1</i>"] --> resp(["response"])
+    cin -. "no match" .-> e415["415"]
+    cout -. "no match" .-> e406["406"]
+    e415 & e406 --> adv["<b>GlobalExceptionHandler</b><br/>group B"]
+    classDef todo fill:#fde68a,stroke:#b45309,stroke-width:2px,color:#111
+    classDef err fill:#fecaca,stroke:#b91c1c,color:#111
+    class cin,cout,adv todo
+    class e415,e406 err
 ```
 
 ### Build it
@@ -638,8 +695,23 @@ use them (Step 6b).
 
 ### Expected behavior
 
-- Liquibase applies only the new changeSet at startup; the earlier ones are
-  skipped.
+- At startup, Liquibase walks the master in order and applies only what
+  `databasechangelog` does not list yet:
+
+```mermaid
+flowchart LR
+    subgraph applied["already applied: skipped"]
+        f1["v1.0-init.yaml"] --> f2["v1.0.1-identity.yaml"] --> f3["v1.0.2-listing.yaml<br/><i>Step 2a</i>"]
+    end
+    subgraph pending["new: applied"]
+        f4["<b>v1.1-v2-fields.yaml</b><br/><i>Step 5</i>"]
+    end
+    m(["db.changelog-master.yaml"]) --> f1
+    f3 --> f4
+    classDef todo fill:#fde68a,stroke:#b45309,stroke-width:2px,color:#111
+    class f4 todo
+```
+
 - Rows created before the migration have `NULL` in the 7 new columns.
 - No existing column is modified or dropped.
 - The V1 API answers exactly as before: no new field in any response.
@@ -741,18 +813,14 @@ client must never destroy what a V2 client wrote.
 
 ### How it fits
 
-```
-GET /listings?version=2
-  │
-  ▼
-Spring versioning (ApiVersioningConfig)   reads ?version, default 1, unknown -> InvalidApiVersionException
-  │                                       adds Deprecation / Sunset to V1 responses
-  ▼
-ListingController   method declared version = "1"   or   version = "2"
-  │                        │                                │
-  │                 V1 DTOs (Step 2a)             V2 DTOs (private fields null for non-owners)
-  ▼
-ListingService (same rules for both versions)
+```mermaid
+flowchart TD
+    req(["GET /listings?version=2"]) --> ver["<b>Spring versioning</b> · ApiVersioningConfig, Step 6a<br/><i>reads ?version, default 1, unknown → InvalidApiVersionException<br/>adds Deprecation / Sunset to V1 responses</i>"]
+    ver -- "version 1" --> v1["<b>ListingController</b><br/>method declared version = #quot;1#quot;<br/><i>V1 DTOs (Step 2a)</i>"]
+    ver -- "version 2" --> v2["<b>ListingController</b><br/>method declared version = #quot;2#quot;<br/><i>V2 DTOs: private fields null for non-owners</i>"]
+    v1 & v2 --> svc["<b>ListingService</b><br/><i>same rules for both versions</i>"]
+    classDef todo fill:#fde68a,stroke:#b45309,stroke-width:2px,color:#111
+    class v2 todo
 ```
 
 ### Build it
@@ -793,9 +861,20 @@ ListingService (same rules for both versions)
 | `negotiable` | — | ✓ | ✓ |
 | `active`, `streetAddress`, `city`, `postalCode`, `country`, `latitude`, `longitude` | — | — | ✓ |
 
-- V2 `POST` / `PUT` accept the V2 fields. On a V2 `PUT`, a V2 field that is
-  absent (or `null`) keeps its stored value. A V1 `PUT` leaves every V2 field
-  unchanged.
+- V2 `POST` / `PUT` accept the V2 fields. What each `PUT` writes:
+
+```mermaid
+flowchart LR
+    v1(["PUT ?version=1"]) -- "replaces" --> c1
+    v2(["PUT ?version=2"]) -- "replaces" --> c1
+    v2 -- "updates present fields<br/>(absent or null = unchanged)" --> c2
+    v1 -. "never touches" .-> c2
+    subgraph row["listing row"]
+        c1["V1 columns<br/>title, description, price, category<br/><i>active: unchanged if absent</i>"]
+        c2["V2 columns<br/>negotiable, street_address, city,<br/>postal_code, country, latitude, longitude"]
+    end
+```
+
 - Pagination, filters, ownership (403), and hidden listings (404) behave the
   same in V1 and V2.
 - `/v3/api-docs/listings-v1` and `/v3/api-docs/listings-v2` return two
@@ -836,10 +915,15 @@ fails.
 
 ### How it fits
 
-```
-ListingServiceImpl ──> GeocodingPort (interface, yours) ──> NominatimGeocodingAdapter ──HTTP──> Nominatim
-                       ▲                                    (RestClient, timeouts)
-                       └── in tests: a mock of the port
+```mermaid
+flowchart TD
+    svc["<b>ListingServiceImpl</b>"] -- "error, timeout (3 s),<br/>or no result" --> fb["WARN log<br/>null coordinates<br/>save anyway"]
+    svc --> port["<b>GeocodingPort</b><br/><i>interface, yours</i>"]
+    ad["<b>NominatimGeocodingAdapter</b><br/><i>RestClient, timeouts</i>"] -. "implements" .-> port
+    mock["in tests:<br/>a mock of the port"] -. "implements" .-> port
+    ad -- "HTTP" --> nom(["Nominatim"])
+    classDef todo fill:#fde68a,stroke:#b45309,stroke-width:2px,color:#111
+    class svc,port,ad,fb todo
 ```
 
 ### Build it
